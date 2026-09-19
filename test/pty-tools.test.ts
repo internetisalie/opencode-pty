@@ -13,6 +13,7 @@ describe('PTY Tools', () => {
     beforeEach(() => {
       spyOn(manager, 'spawn').mockImplementation((opts) => ({
         id: 'test-session-id',
+        parentSessionId: opts.parentSessionId,
         title: opts.title || 'Test Session',
         command: opts.command,
         args: opts.args || [],
@@ -130,6 +131,7 @@ describe('PTY Tools', () => {
     beforeEach(() => {
       spyOn(manager, 'get').mockReturnValue({
         id: 'test-session-id',
+        parentSessionId: 'parent-session-id',
         title: 'Test Session',
         description: 'A session for testing',
         command: 'echo',
@@ -185,6 +187,7 @@ describe('PTY Tools', () => {
     it('should include notifyOnExit reminder for running sessions', async () => {
       spyOn(manager, 'get').mockReturnValue({
         id: 'test-session-id',
+        parentSessionId: 'parent-session-id',
         title: 'Test Session',
         description: 'A session for testing',
         command: 'echo',
@@ -287,6 +290,7 @@ describe('PTY Tools', () => {
       const mockSessions = [
         {
           id: 'pty_123',
+          parentSessionId: 'parent-session-id',
           title: 'Test Session',
           command: 'echo',
           args: ['hello'],

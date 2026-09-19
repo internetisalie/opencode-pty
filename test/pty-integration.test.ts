@@ -143,6 +143,7 @@ describe('PTY Manager Integration', () => {
       })
 
       const sessionInfo = await sessionInfoPromise
+      expect(sessionInfo.session.parentSessionId).toBe(managedTestServer.sessionId)
 
       const response = await fetch(`${managedTestServer.server.server.url}/api/sessions`)
       const sessions = (await response.json()) as PTYSessionInfo[]
@@ -153,6 +154,7 @@ describe('PTY Manager Integration', () => {
       const testSession = sessions.find((s) => s.id === sessionInfo.session.id)
       expect(testSession).toBeDefined()
       if (!testSession) return
+      expect(testSession.parentSessionId).toBe(managedTestServer.sessionId)
       expect(testSession.command).toBe('node')
       expect(testSession.args).toEqual(['-e', "console.log('test')"])
       expect(testSession.status).toBeDefined()
@@ -196,6 +198,7 @@ describe('PTY Manager Integration', () => {
       )
       const sessionData = (await response.json()) as PTYSessionInfo
 
+      expect(sessionData.parentSessionId).toBe(managedTestServer.sessionId)
       expect(sessionData.status).toBe('exited')
       expect(sessionData.exitCode).toBe(0)
     })

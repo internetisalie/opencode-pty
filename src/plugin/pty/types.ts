@@ -27,6 +27,7 @@ export interface PTYSession {
 
 export interface PTYSessionInfo {
   id: string
+  parentSessionId: string
   title: string
   description?: string
   command: string

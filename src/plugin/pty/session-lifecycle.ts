@@ -204,6 +204,7 @@ export class SessionLifecycleManager {
   toInfo(session: PTYSession): PTYSessionInfo {
     return {
       id: session.id,
+      parentSessionId: session.parentSessionId,
       title: session.title,
       description: session.description,
       command: session.command,

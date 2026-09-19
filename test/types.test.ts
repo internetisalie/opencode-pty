@@ -23,6 +23,7 @@ describe('Web Types', () => {
       const sessions: PTYSessionInfo[] = [
         {
           id: 'pty_12345',
+          parentSessionId: 'parent-session-id',
           title: 'Test Session',
           command: 'echo',
           status: 'running',
@@ -61,6 +62,7 @@ describe('Web Types', () => {
     it('should validate complete session data structure', () => {
       const session: PTYSessionInfo = {
         id: 'pty_12345',
+        parentSessionId: 'parent-session-id',
         title: 'Test Echo Session',
         command: 'echo',
         status: 'exited',
@@ -88,6 +90,7 @@ describe('Web Types', () => {
     it('should allow optional exitCode', () => {
       const session: PTYSessionInfo = {
         id: 'pty_67890',
+        parentSessionId: 'parent-session-id',
         title: 'Running Session',
         command: 'sleep',
         status: 'running',

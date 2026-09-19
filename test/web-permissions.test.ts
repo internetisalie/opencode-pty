@@ -29,6 +29,7 @@ function initTestPermissions(permission: TestPermissionConfig = {}) {
 function buildSpawnInfo(overrides: Partial<PTYSessionInfo> = {}): PTYSessionInfo {
   return {
     id: 'pty_denied_test',
+    parentSessionId: 'parent-session-id',
     title: 'Denied test',
     command: 'echo',
     args: ['blocked'],
