@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 
 // This test ensures `npm pack` (which triggers the package's `prepack` script)
 // produces a tarball that includes the built web UI (`dist/web/**`) and the
-// plugin bundle (`dist/opencode-pty.js`).
+// compiled plugin entrypoint (`dist/index.js`).
 
 async function run(cmd: string[], opts: { cwd?: string } = {}) {
   const proc = Bun.spawn(cmd, {
@@ -43,6 +43,14 @@ describe('npm pack structure', () => {
     const list = await run(['tar', '-tf', tgz as string])
     expect(list.code).toBe(0)
     const files = list.stdout.split(/\r?\n/).filter(Boolean)
+
+    const metadata = await run(['tar', '-xOf', tgz as string, 'package/package.json'])
+    expect(metadata.code).toBe(0)
+    expect(JSON.parse(metadata.stdout)).toMatchObject({
+      name: '@internetisalie/opencode-pty',
+      version: '0.4.1',
+      publishConfig: { registry: 'https://npm.pkg.github.com' },
+    })
 
     // 3) Validate required files exist; NPM tarballs use 'package/' prefix
     expect(files).toContain('package/dist/web/index.html')

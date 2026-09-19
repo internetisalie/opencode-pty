@@ -36,20 +36,20 @@ Add the plugin to your [OpenCode config](https://opencode.ai/docs/config/):
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-pty"]
+  "plugin": ["@internetisalie/opencode-pty@0.4.1"]
 }
 ```
 
 ### OpenCode V2
 
-OpenCode V2 uses the new plugin API. You can load `opencode-pty/v2` and optionally configure options (such as a fixed web UI port):
+OpenCode V2 uses the new plugin API. You can load `@internetisalie/opencode-pty/v2` and optionally configure options (such as a fixed web UI port):
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
     {
-      "package": "opencode-pty/v2",
+      "package": "@internetisalie/opencode-pty/v2",
       "options": {
         "port": 4200,
         "hostname": "127.0.0.1",
@@ -66,16 +66,23 @@ OpenCode V2 uses the new plugin API. You can load `opencode-pty/v2` and optional
 | `hostname` | `string` | `"::1"` | Hostname to bind the PTY Web UI server to |
 | `autostart` | `boolean` | `false` | Automatically start the Web UI server on startup |
 
-OpenCode will automatically install the plugin on next run.
+OpenCode will install the pinned plugin version on next run.
+
+This fork is published through GitHub Packages. Configure npm/Bun to use the GitHub registry for the scope before starting OpenCode:
+
+```ini
+@internetisalie:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
+```
 
 ## Updating
 
-OpenCode automatically checks for and installs plugin updates on startup. You don't need to do anything manually!
+Update the version in your OpenCode config when a new package is released.
 
 If you ever need to force a clean reinstall, you can clear the cache:
 
 ```bash
-rm -rf ~/.cache/opencode/node_modules/opencode-pty
+rm -rf ~/.cache/opencode/packages/@internetisalie/opencode-pty@0.4.1
 opencode
 ```
 
@@ -333,7 +340,7 @@ Use `pty_kill` with `cleanup=true` to remove completely.
 ## Local Development
 
 ```bash
-git clone https://github.com/shekohex/opencode-pty.git
+git clone https://github.com/internetisalie/opencode-pty.git
 cd opencode-pty
 bun ci          # install packages from bun.lock
 bun lint        # Runs Biome linting checks

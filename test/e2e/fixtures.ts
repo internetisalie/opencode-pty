@@ -1,4 +1,6 @@
 import { type ChildProcess, spawn } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test as base, type WorkerInfo } from '@playwright/test'
 
 import { createApiClient } from '../../src/web/shared/api-client.ts'
@@ -32,7 +34,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     // biome-ignore lint/correctness/noEmptyPattern: required empty pattern for Playwright fixture
     async ({}, fixtureUse, workerInfo: WorkerInfo) => {
       const workerIndex = workerInfo.workerIndex
-      const portFilePath = `/tmp/test-server-port-${workerIndex}.txt`
+      const portFilePath = join(tmpdir(), `test-server-port-${workerIndex}.txt`)
 
       // Clean up old port file from previous test runs
       try {

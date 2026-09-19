@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# release.sh - Automate NPM package release via GitHub Actions
+# release.sh - Prepare a GitHub Packages npm release via GitHub Actions
 # 
 # Usage: ./release.sh [options]
 # 
@@ -136,6 +136,7 @@ if [ "$DRY_RUN" = true ]; then
 else
     # npm version returns the new version string like "v1.0.1"
     NEW_VERSION_TAG=$(npm version "$BUMP_TYPE" --no-git-tag-version)
+    bun install --lockfile-only
     # Remove 'v' prefix for consistency if needed, though npm version returns with v
     NEW_VERSION=${NEW_VERSION_TAG#v}
     log_success "Bumped version to: $NEW_VERSION"
@@ -154,39 +155,38 @@ COMMIT_MSG="chore: release $NEW_VERSION"
 
 # 6. Commit Changes
 if [ "$DRY_RUN" = true ]; then
-    log_info "[DRY-RUN] Would run: git add package.json"
+    log_info "[DRY-RUN] Would run: git add package.json bun.lock"
     log_info "[DRY-RUN] Would run: git commit -m \"$COMMIT_MSG\""
 else
-    git add package.json
+    git add package.json bun.lock
     git commit -m "$COMMIT_MSG"
     log_success "Commited changes: $COMMIT_MSG"
 fi
 
-# 7. Push to Main
+# 7. Push to the fork trunk
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
 if [ "$CURRENT_BRANCH" != "main" ]; then
-    log_warn "You are on branch '$CURRENT_BRANCH', not 'main'. The release workflow triggers on 'main'."
+    log_error "Releases must be prepared from main, not '$CURRENT_BRANCH'."
+    exit 1
 fi
 
 if [ "$DRY_RUN" = true ]; then
-    log_info "[DRY-RUN] Would prompt for confirmation (unless -y) and push to origin $CURRENT_BRANCH"
+    log_info "[DRY-RUN] Would prompt for confirmation (unless -y) and push to fork main"
 else
     if [ "$SKIP_CONFIRM" = false ]; then
-        log_warn "Ready to push to origin $CURRENT_BRANCH. This will trigger the GitHub Action release workflow."
+        log_warn "Ready to push to fork main. This will trigger the GitHub Action release workflow."
         read -p "Are you sure you want to proceed? [Y/n] " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             log_info "Release cancelled by user."
-            # Optional: revert the version bump? 
-            # For safety in this simple script, we leave it as is, but user can git reset.
-            log_warn "Note: package.json version was bumped. Use 'git reset --hard HEAD^' to undo if needed."
+            log_warn "Note: the release commit was created locally and was not pushed."
             exit 0
         fi
     fi
 
-    log_info "Pushing to origin..."
-    git push origin "$CURRENT_BRANCH"
+    log_info "Pushing to fork..."
+    git push fork main
     log_success "Pushed successfully!"
     log_info "GitHub Actions should now handle the release."
 fi

@@ -3,141 +3,153 @@ name: Release
 on:
   workflow_run:
     workflows: ['CI']
-    types:
-      - completed
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
-  id-token: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
 
 jobs:
   publish:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: >-
+      github.repository == 'internetisalie/opencode-pty' &&
+      ((github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository) ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout release commit
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Verify release commit and package metadata
+        id: release
+        env:
+          RELEASE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags --force
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "$PACKAGE_NAME" != '@internetisalie/opencode-pty' ]; then
+            echo "Unexpected package name: $PACKAGE_NAME" >&2
+            exit 1
+          fi
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid package version: $VERSION" >&2
+            exit 1
+          fi
+
+          echo "name=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+          if git rev-parse --verify --quiet "refs/tags/v$VERSION" >/dev/null; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Setup Bun
+        if: steps.release.outputs.needed == 'true'
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.8
 
-      - name: Determine release state
-        id: determine
-        run: |
-          set -euo pipefail
-          CURRENT_VERSION=$(bun -e 'import pkg from "./package.json"; console.log(pkg.version)')
-          echo "current_version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
-          if git rev-parse HEAD^ >/dev/null 2>&1; then
-            PREVIOUS_VERSION=$(bun -e "const { execSync } = require('node:child_process'); try { const data = execSync('git show HEAD^:package.json', { stdio: ['ignore', 'pipe', 'ignore'] }); const json = JSON.parse(data.toString()); if (json && typeof json.version === 'string') { process.stdout.write(json.version); } } catch (error) {}")
-            PREVIOUS_VERSION=${PREVIOUS_VERSION//$'\n'/}
-          else
-            PREVIOUS_VERSION=""
-          fi
-          echo "previous_version=$PREVIOUS_VERSION" >> "$GITHUB_OUTPUT"
-          if [ "$CURRENT_VERSION" = "$PREVIOUS_VERSION" ]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-          git fetch --tags --force
-          if git tag -l "v$CURRENT_VERSION" | grep -q "v$CURRENT_VERSION"; then
-            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Install dependencies
-        if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
-        run: bun ci
-
-      - name: Generate release notes
-        if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
-        id: release_notes
-        run: |
-          set -euo pipefail
-          CURRENT_VERSION="${{ steps.determine.outputs.current_version }}"
-          PREVIOUS_VERSION="${{ steps.determine.outputs.previous_version }}"
-          RANGE=""
-          COMPARE_URL=""
-          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
-          if [ -z "$LAST_TAG" ] && [ -n "$PREVIOUS_VERSION" ] && git rev-parse "refs/tags/v${PREVIOUS_VERSION}" >/dev/null 2>&1; then
-            LAST_TAG="v${PREVIOUS_VERSION}"
-          fi
-          if [ -n "$LAST_TAG" ]; then
-            RANGE="${LAST_TAG}..HEAD"
-            COMPARE_URL="https://github.com/${GITHUB_REPOSITORY}/compare/${LAST_TAG}...v${CURRENT_VERSION}"
-          fi
-          if [ -n "$RANGE" ]; then
-            CHANGELOG=$(git log --no-merges --pretty=format:'- %s (%h)' "$RANGE")
-          else
-            CHANGELOG=$(git log --no-merges --pretty=format:'- %s (%h)')
-          fi
-          if [ -z "$CHANGELOG" ]; then
-            CHANGELOG="- Initial release"
-          fi
-          BODY_FILE=$(mktemp)
-          {
-            echo "## Release v${CURRENT_VERSION}"
-            echo ""
-            if [ -n "$COMPARE_URL" ]; then
-              echo "Compare changes: $COMPARE_URL"
-              echo ""
-            fi
-            printf "%s\n" "$CHANGELOG"
-            echo ""
-            echo "### Installation"
-            echo ""
-            echo "Add to your \`opencode.json\`:"
-            echo ""
-            printf '%s\n' '```json'
-            printf '%s\n' '{'
-            printf '%s\n' '  "$schema": "https://opencode.ai/config.json",'
-            printf '%s\n' '  "plugin": ["opencode-pty"]'
-            printf '%s\n' '}'
-            printf '%s\n' '```'
-            echo ""
-            echo "### Update Instructions"
-            echo ""
-            echo "To get the latest version:"
-            echo ""
-            printf '%s\n' '```bash'
-            printf '%s\n' 'rm -rf ~/.cache/opencode/node_modules/opencode-pty'
-            printf '%s\n' 'opencode'
-            printf '%s\n' '```'
-          } >"$BODY_FILE"
-          cat "$BODY_FILE"
-          {
-            echo "body<<EOF"
-            cat "$BODY_FILE"
-            echo "EOF"
-          } >>"$GITHUB_OUTPUT"
-
-      - name: Setup Node
-        if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
+      - name: Setup Node for GitHub Packages
+        if: steps.release.outputs.needed == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
+          registry-url: https://npm.pkg.github.com
+          scope: '@internetisalie'
 
-      - name: Publish to npm
-        if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
-        run: npm publish --access public --provenance
+      - name: Install dependencies
+        if: steps.release.outputs.needed == 'true'
+        run: bun ci
 
-      - name: Create GitHub release
-        if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
-        run: |
-          NOTES_FILE=$(mktemp)
-          cat >"$NOTES_FILE" <<'EOF'
-          ${{ steps.release_notes.outputs.body }}
-          EOF
-          gh release create "v${{ steps.determine.outputs.current_version }}" \
-            --title "v${{ steps.determine.outputs.current_version }}" \
-            --notes-file "$NOTES_FILE"
+      - name: Check whether package version exists
+        if: steps.release.outputs.needed == 'true'
+        id: package
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if npm view "${{ steps.release.outputs.name }}@${{ steps.release.outputs.version }}" version \
+            --registry https://npm.pkg.github.com >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to GitHub Packages
+        if: steps.release.outputs.needed == 'true' && steps.package.outputs.exists == 'false'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm publish --registry https://npm.pkg.github.com
+
+      - name: Generate release notes
+        if: steps.release.outputs.needed == 'true'
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.release.outputs.version }}"
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+          if [ -n "$LAST_TAG" ]; then
+            CHANGELOG=$(git log --no-merges --pretty=format:'- %s (%h)' "$LAST_TAG..HEAD")
+            COMPARE_URL="https://github.com/${GITHUB_REPOSITORY}/compare/${LAST_TAG}...v${VERSION}"
+          else
+            CHANGELOG=$(git log --no-merges --pretty=format:'- %s (%h)')
+            COMPARE_URL=""
+          fi
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG='- No user-facing changes'
+          fi
+
+          {
+            echo "## Release v${VERSION}"
+            echo
+            if [ -n "$COMPARE_URL" ]; then
+              echo "Compare changes: $COMPARE_URL"
+              echo
+            fi
+            printf '%s\n' "$CHANGELOG"
+            echo
+            echo '### Installation'
+            echo
+            echo 'Configure the `@internetisalie` scope for `https://npm.pkg.github.com`, then add this to `opencode.json`:'
+            echo
+            printf '%s\n' '```json'
+            printf '%s\n' '{'
+            printf '%s\n' '  "$schema": "https://opencode.ai/config.json",'
+            printf '%s\n' '  "plugin": ["@internetisalie/opencode-pty@0.4.1"]'
+            printf '%s\n' '}'
+            printf '%s\n' '```'
+            echo
+            echo 'To force a clean reinstall:'
+            echo
+            printf '%s\n' '```bash'
+            printf '%s\n' 'rm -rf ~/.cache/opencode/packages/@internetisalie/opencode-pty@0.4.1'
+            printf '%s\n' 'opencode'
+            printf '%s\n' '```'
+          } > .release-notes.md
+
+      - name: Create GitHub release and tag
+        if: steps.release.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          gh release create "v${{ steps.release.outputs.version }}"
+          --repo "$GITHUB_REPOSITORY"
+          --target "${{ steps.release.outputs.sha }}"
+          --title "v${{ steps.release.outputs.version }}"
+          --notes-file .release-notes.md

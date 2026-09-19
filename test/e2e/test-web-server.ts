@@ -1,4 +1,6 @@
 import { OpencodeClient } from '@opencode-ai/sdk'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { initManager } from '../../src/plugin/pty/manager.ts'
 import { PTYServer } from '../../src/web/server/server.ts'
 
@@ -14,7 +16,7 @@ if (process.env.NODE_ENV === 'test') {
   if (!server.server.url) {
     throw new Error('Server URL not available. File an issue if you need this feature.')
   }
-  await Bun.write(`/tmp/test-server-port-${workerIndex}.txt`, server.server.url.href)
+  await Bun.write(join(tmpdir(), `test-server-port-${workerIndex}.txt`), server.server.url.href)
 }
 
 // Health check for test mode

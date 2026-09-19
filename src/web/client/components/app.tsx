@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { PTYSessionInfo } from 'opencode-pty/web/shared/types'
+import type { PTYSessionInfo } from '@internetisalie/opencode-pty/web/shared/types'
 
 import { useWebSocket } from '../hooks/use-web-socket.ts'
 import { useSessionManager } from '../hooks/use-session-manager.ts'

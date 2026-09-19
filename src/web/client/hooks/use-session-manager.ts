@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import type { PTYSessionInfo } from 'opencode-pty/web/shared/types'
+import type { PTYSessionInfo } from '@internetisalie/opencode-pty/web/shared/types'
 
 import { api } from '../../shared/api-client'
 

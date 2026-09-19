@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import type { createApiClient } from 'opencode-pty/web/shared/api-client'
+import type { createApiClient } from '@internetisalie/opencode-pty/web/shared/api-client'
 import { expect, test as extendedTest } from './fixtures'
 import {
   getSerializedContentByXtermSerializeAddon,

@@ -1,7 +1,9 @@
-import { initManager, manager } from 'opencode-pty/plugin/pty/manager'
-import { PTYServer } from 'opencode-pty/web/server/server'
+import { initManager, manager } from '@internetisalie/opencode-pty/plugin/pty/manager'
+import { PTYServer } from '@internetisalie/opencode-pty/web/server/server'
 import { OpencodeClient } from '@opencode-ai/sdk'
-import { createApiClient } from 'opencode-pty/web/shared/api-client'
+import { createApiClient } from '@internetisalie/opencode-pty/web/shared/api-client'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 // Set NODE_ENV if not set
 if (!process.env.NODE_ENV) {
@@ -20,7 +22,10 @@ if (process.env.NODE_ENV === 'test') {
   if (!server.server.port) {
     throw new Error('Unix sockets not supported. File an issue if you need this feature.')
   }
-  await Bun.write(`/tmp/test-server-port-${workerIndex}.txt`, server.server.port.toString())
+  await Bun.write(
+    join(tmpdir(), `test-server-port-${workerIndex}.txt`),
+    server.server.port.toString()
+  )
 }
 
 const api = createApiClient(server.server.url.origin)

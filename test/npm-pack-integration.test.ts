@@ -31,6 +31,7 @@ function findPackFileFromOutput(stdout: string): string {
 describe('npm pack integration', () => {
   let tempDir: string
   let packFile: string | null = null
+  let portFile: string | null = null
   let serverProcess: ReturnType<typeof Bun.spawn> | null = null
   let baseURL = ''
 
@@ -55,6 +56,10 @@ describe('npm pack integration', () => {
     // Cleanup pack file
     if (packFile) {
       await run(['rm', '-f', packFile])
+    }
+    if (portFile) {
+      rmSync(portFile, { force: true })
+      portFile = null
     }
   })
 
@@ -89,12 +94,13 @@ describe('npm pack integration', () => {
     )
 
     // Verify the package structure (compiled JS shipped in dist/)
-    const packageDir = join(tempDir, 'node_modules/opencode-pty')
+    const packageDir = join(tempDir, 'node_modules/@internetisalie/opencode-pty')
     expect(existsSync(join(packageDir, 'dist/src/plugin/pty/manager.js'))).toBe(true)
     expect(existsSync(join(packageDir, 'dist/web/index.html'))).toBe(true)
-    const portFile = join('/tmp', 'test-server-port-0.txt')
-    if (await Bun.file(portFile).exists()) {
-      await Bun.file(portFile).delete()
+    const testPortFile = join(tmpdir(), 'test-server-port-0.txt')
+    portFile = testPortFile
+    if (await Bun.file(testPortFile).exists()) {
+      await Bun.file(testPortFile).delete()
     }
     serverProcess = Bun.spawn(['bun', 'run', 'test/start-server.ts'], {
       cwd: tempDir,
@@ -111,10 +117,10 @@ describe('npm pack integration', () => {
 
       // Polling logic as a separate async function.
       const pollForFile = async () => {
-        while (!(await Bun.file(portFile).exists())) {
+        while (!(await Bun.file(testPortFile).exists())) {
           await new Promise(setImmediate)
         }
-        const bytes = await Bun.file(portFile).bytes()
+        const bytes = await Bun.file(testPortFile).bytes()
         const portStr = new TextDecoder().decode(bytes).trim()
         const port = parseInt(portStr, 10)
         if (Number.isNaN(port)) return 0
