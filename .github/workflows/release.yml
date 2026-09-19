@@ -96,6 +96,7 @@ jobs:
         if: steps.release.outputs.needed == 'true' && steps.package.outputs.exists == 'false'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
         run: npm publish --registry https://npm.pkg.github.com
 
       - name: Generate release notes
