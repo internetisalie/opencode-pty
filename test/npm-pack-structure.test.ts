@@ -48,12 +48,20 @@ describe('npm pack structure', () => {
     expect(metadata.code).toBe(0)
     expect(JSON.parse(metadata.stdout)).toMatchObject({
       name: '@internetisalie/opencode-pty',
-      version: '0.4.1',
+      version: '0.5.0',
       publishConfig: { registry: 'https://npm.pkg.github.com' },
+      exports: {
+        '.': { default: './dist/src/v2/index.js' },
+        './server': { default: './dist/src/v2/index.js' },
+        './v1': { default: './dist/index.js' },
+      },
     })
 
     // 3) Validate required files exist; NPM tarballs use 'package/' prefix
     expect(files).toContain('package/dist/web/index.html')
+    expect(files).toContain('package/dist/src/v2/index.js')
+    expect(files).toContain('package/dist/src/v2/index.d.ts')
+    expect(files).toContain('package/dist/index.js')
 
     // At least one hashed JS and CSS asset
     const hasJsAsset = files.some((f) => /package\/dist\/web\/assets\/[^/]+\.js$/.test(f))
