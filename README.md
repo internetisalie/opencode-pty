@@ -31,7 +31,7 @@ This plugin gives the agent full control over multiple terminal sessions, like t
 
 ### OpenCode V1
 
-Add the plugin to your [OpenCode config](https://opencode.ai/docs/config/):
+Keep OpenCode V1 pinned to the last V1 release. Version 0.5.0 and later load the V2 adapter by default:
 
 ```json
 {
@@ -42,14 +42,14 @@ Add the plugin to your [OpenCode config](https://opencode.ai/docs/config/):
 
 ### OpenCode V2
 
-OpenCode V2 uses the new plugin API and its native persistent PTY service. Configure the URL of the *same* OpenCode server that loads this plugin:
+OpenCode V2 uses the new plugin API and its native persistent PTY service. After version 0.5.0 is published, configure the package name and the URL of the *same* OpenCode server that loads this plugin:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": [
+  "plugins": [
     {
-      "package": "@internetisalie/opencode-pty/v2",
+      "package": "@internetisalie/opencode-pty@0.5.0",
       "options": {
         "serverUrl": "http://127.0.0.1:4096"
       }
@@ -67,7 +67,7 @@ The V2 plugin host currently exposes `experimental.terminal.read`, but does not 
 
 The V2 adapter does not start the old standalone PTY Web UI. OpenCode and OpenChamber should display the native persistent terminals. `pty_kill` removes the terminal and its retained output; `pty_read` reads the current native snapshot rather than the V1 line buffer. V2 does not yet support the V1 plugin's `notifyOnExit` or `timeoutSeconds` options. V2's plugin API does not expose a permission assertion call, so configure OpenCode's tool permissions for `pty_spawn`, `pty_write`, and `pty_kill` and bind `serverUrl` only to the intended OpenCode server.
 
-OpenCode will install the pinned plugin version on next run.
+OpenCode installs the pinned package on next run and resolves its `/server` export, which points to the V2 adapter. `/v2` is also available for direct imports; it is not an installable package name. The legacy V1 module remains available at `/v1` for direct imports.
 
 This fork is published through GitHub Packages. Configure npm/Bun to use the GitHub registry for the scope before starting OpenCode:
 
@@ -80,7 +80,7 @@ This fork is published through GitHub Packages. Configure npm/Bun to use the Git
 
 Update the version in your OpenCode config when a new package is released.
 
-If you ever need to force a clean reinstall, you can clear the cache:
+Use OpenCode V2's plugin update command or restart after changing the configured package version. The legacy V1 cache reset is:
 
 ```bash
 rm -rf ~/.cache/opencode/packages/@internetisalie/opencode-pty@0.4.1

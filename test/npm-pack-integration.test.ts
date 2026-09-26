@@ -66,6 +66,8 @@ describe('npm pack integration', () => {
   it('packs, installs, and serves assets correctly', async () => {
     // 1) Create temp workspace
     tempDir = mkdtempSync(join(tmpdir(), 'opencode-pty-'))
+    // Stop Bun from walking into the repository when scratch lives inside a worktree.
+    await Bun.write(join(tempDir, 'package.json'), JSON.stringify({ private: true }))
 
     // 2) Pack the package
     const pack = await run(['npm', 'pack'])
@@ -97,6 +99,19 @@ describe('npm pack integration', () => {
     const packageDir = join(tempDir, 'node_modules/@internetisalie/opencode-pty')
     expect(existsSync(join(packageDir, 'dist/src/plugin/pty/manager.js'))).toBe(true)
     expect(existsSync(join(packageDir, 'dist/web/index.html'))).toBe(true)
+    const v2Import = await run(
+      [
+        'bun',
+        '-e',
+        `for (const entry of ['@internetisalie/opencode-pty', '@internetisalie/opencode-pty/server', '@internetisalie/opencode-pty/v2']) {
+          const { default: plugin } = await import(entry)
+          if (plugin?.id !== 'opencode-pty' || typeof plugin.setup !== 'function')
+            throw new Error('V2 plugin definition missing from ' + entry)
+        }`,
+      ],
+      { cwd: tempDir }
+    )
+    expect(v2Import.code).toBe(0)
     const testPortFile = join(tmpdir(), 'test-server-port-0.txt')
     portFile = testPortFile
     if (await Bun.file(testPortFile).exists()) {

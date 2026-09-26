@@ -132,16 +132,11 @@ jobs:
             printf '%s\n' '```json'
             printf '%s\n' '{'
             printf '%s\n' '  "$schema": "https://opencode.ai/config.json",'
-            printf '%s\n' '  "plugin": ["@internetisalie/opencode-pty@0.4.1"]'
+            printf '  "plugins": [{"package": "%s@%s", "options": {"serverUrl": "http://127.0.0.1:4096"}}]\n' "${{ steps.release.outputs.name }}" "$VERSION"
             printf '%s\n' '}'
             printf '%s\n' '```'
             echo
-            echo 'To force a clean reinstall:'
-            echo
-            printf '%s\n' '```bash'
-            printf '%s\n' 'rm -rf ~/.cache/opencode/packages/@internetisalie/opencode-pty@0.4.1'
-            printf '%s\n' 'opencode'
-            printf '%s\n' '```'
+            echo 'This release uses the OpenCode V2 adapter and requires the fork server with persistent terminal input acknowledgements. Point `serverUrl` at the same OpenCode server loading the plugin. Keep OpenCode V1 installations pinned to version 0.4.1.'
           } > .release-notes.md
 
       - name: Create GitHub release and tag
