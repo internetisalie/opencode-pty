@@ -42,7 +42,7 @@ Add the plugin to your [OpenCode config](https://opencode.ai/docs/config/):
 
 ### OpenCode V2
 
-OpenCode V2 uses the new plugin API. You can load `@internetisalie/opencode-pty/v2` and optionally configure options (such as a fixed web UI port):
+OpenCode V2 uses the new plugin API and its native persistent PTY service. Configure the URL of the *same* OpenCode server that loads this plugin:
 
 ```json
 {
@@ -51,9 +51,7 @@ OpenCode V2 uses the new plugin API. You can load `@internetisalie/opencode-pty/
     {
       "package": "@internetisalie/opencode-pty/v2",
       "options": {
-        "port": 4200,
-        "hostname": "127.0.0.1",
-        "autostart": false
+        "serverUrl": "http://127.0.0.1:4096"
       }
     }
   ]
@@ -62,9 +60,12 @@ OpenCode V2 uses the new plugin API. You can load `@internetisalie/opencode-pty/
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `port` | `number` | `0` (ephemeral) | Fixed port for the PTY Web UI observer server |
-| `hostname` | `string` | `"::1"` | Hostname to bind the PTY Web UI server to |
-| `autostart` | `boolean` | `false` | Automatically start the Web UI server on startup |
+| `serverUrl` | `string` | `OPENCODE_PTY_SERVER_URL` | URL of the OpenCode v2 server loading this plugin |
+| `serverPassword` | `string` | `OPENCODE_SERVER_PASSWORD` | Basic-auth server password, if enabled |
+
+The V2 plugin host currently exposes `experimental.terminal.read`, but does not expose native PTY create, list, snapshot, remove, or input operations to plugins. This adapter uses the server's native HTTP endpoints and ticketed WebSocket input. It registers `pty_spawn`, `pty_write`, `pty_read`, `pty_list`, and `pty_kill` using the V2 tool editor. Terminal ownership is checked against the calling session before read, write, or removal.
+
+The V2 adapter does not start the old standalone PTY Web UI. OpenCode and OpenChamber should display the native persistent terminals. `pty_kill` removes the terminal and its retained output; `pty_read` reads the current native snapshot rather than the V1 line buffer. V2 does not yet support the V1 plugin's `notifyOnExit` or `timeoutSeconds` options. V2's plugin API does not expose a permission assertion call, so configure OpenCode's tool permissions for `pty_spawn`, `pty_write`, and `pty_kill` and bind `serverUrl` only to the intended OpenCode server.
 
 OpenCode will install the pinned plugin version on next run.
 
@@ -88,6 +89,8 @@ opencode
 
 ## Tools Provided
 
+The options below describe the OpenCode V1 adapter. The V2 adapter exposes the same five tool names with the native terminal behavior described above.
+
 | Tool        | Description                                                                 |
 | ----------- | --------------------------------------------------------------------------- |
 | `pty_spawn` | Create a new PTY session (command, args, workdir, env, title, notifyOnExit, timeoutSeconds) |
@@ -98,6 +101,8 @@ opencode
 
 ## Slash Commands
 
+These commands are available with the OpenCode V1 adapter only.
+
 This plugin provides slash commands that can be used in OpenCode chat:
 
 | Command                    | Description                                        |
@@ -106,6 +111,8 @@ This plugin provides slash commands that can be used in OpenCode chat:
 | `/pty-show-server-url`     | Show the URL of the running PTY web server instance |
 
 ## Web UI
+
+This observer UI is available with the OpenCode V1 adapter only.
 
 This plugin includes a modern React-based web interface for monitoring and interacting with PTY sessions.
 

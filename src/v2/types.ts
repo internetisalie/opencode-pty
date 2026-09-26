@@ -1,58 +1,38 @@
 export interface OpencodePtyOptions {
-  /**
-   * Fixed port for the PTY Web UI observer server.
-   * If not set, defaults to an available ephemeral port or PTY_WEB_PORT env var.
-   */
-  port?: number
-
-  /**
-   * Hostname to bind the PTY Web UI observer server to.
-   * Defaults to '::1' (or PTY_WEB_HOSTNAME env var).
-   */
-  hostname?: string
-
-  /**
-   * Automatically start the PTY Web UI observer server upon plugin initialization.
-   * Default is false (started on-demand when slash command is executed).
-   */
-  autostart?: boolean
+  /** URL of this OpenCode v2 server. Required because the v2 plugin host exposes only terminal.read. */
+  serverUrl?: string
+  /** OpenCode server password. OPENCODE_SERVER_PASSWORD is used when omitted. */
+  serverPassword?: string
 }
 
-export interface CommandInfo {
-  title?: string
-  description?: string
-  template?: string
-  [key: string]: unknown
+export interface ToolContextV2 {
+  readonly sessionID: string
+  readonly agent: string
+  readonly signal: AbortSignal
 }
 
-export interface CommandDraft {
-  list?(): readonly unknown[]
-  get?(name: string): unknown
-  update?(name: string, update: (command: CommandInfo) => void): void
-  remove?(name: string): void
-  [key: string]: unknown
+export interface ToolInfoV2 {
+  readonly name: string
+  readonly description: string
+  readonly input: Record<string, unknown>
+  readonly options?: { readonly permission?: string }
+  // The V2 host validates `input` against the JSON schema before dispatch; each tool has its own shape.
+  // biome-ignore lint/suspicious/noExplicitAny: heterogeneous tool registrations erase the validated input type here.
+  readonly execute: (input: any, context: ToolContextV2) => Promise<{ readonly content: string }>
 }
 
 export interface PluginContextV2 {
-  readonly options?: OpencodePtyOptions & Record<string, unknown>
-  readonly command?: {
+  readonly options: OpencodePtyOptions & Record<string, unknown>
+  readonly tool: {
     transform(
-      callback: (commands: CommandDraft) => Promise<void> | void
-    ): Promise<unknown> | undefined
-    reload?(): Promise<void> | void
+      callback: (draft: { add(tool: ToolInfoV2): void }) => void
+    ): Promise<{ dispose(): Promise<void> }>
   }
-  readonly tool?: {
-    transform(callback: (tools: unknown) => Promise<void> | void): Promise<unknown> | undefined
-    reload?(): Promise<void> | void
-  }
-  readonly [key: string]: unknown
 }
 
 export interface PluginV2 {
   readonly id: string
-  readonly setup: (context: PluginContextV2) => Promise<void> | void
-}
-
-export function define(plugin: PluginV2): PluginV2 {
-  return plugin
+  readonly setup: (
+    context: PluginContextV2
+  ) => Promise<(() => Promise<void>) | void> | (() => Promise<void>) | void
 }
