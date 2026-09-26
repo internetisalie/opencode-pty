@@ -125,9 +125,12 @@ describe('OpenCode v2 native PTY adapter', () => {
     const requests: string[] = []
     const sent: string[] = []
     let socketUrl = ''
+    let closed = false
     const socket = new EventTarget() as EventTarget & { send(data: string): void; close(): void }
     socket.send = (data) => sent.push(data)
-    socket.close = () => {}
+    socket.close = () => {
+      closed = true
+    }
     const client = new NativePtyClient({
       serverUrl: 'http://127.0.0.1:9876/',
       fetch: async (url, init) => {
@@ -152,9 +155,22 @@ describe('OpenCode v2 native PTY adapter', () => {
       },
     })
     const write = requiredTool(client, 'pty_write')
-    await write.execute({ id: 'pty_123', data: 'hello\\n\\x03' }, ctx)
+    let completed = false
+    const pending = write.execute({ id: 'pty_123', data: 'hello\\n\\x03' }, ctx).then(() => {
+      completed = true
+    })
+    await Bun.sleep(0)
     expect(sent).toEqual(['hello\n\x03'])
+    expect(completed).toBe(false)
+    expect(closed).toBe(false)
+    socket.dispatchEvent(
+      new MessageEvent('message', { data: JSON.stringify({ type: 'input_ack' }) })
+    )
+    await pending
+    expect(completed).toBe(true)
+    expect(closed).toBe(true)
     expect(new URL(socketUrl).searchParams.get('ticket')).toBe('one-use-ticket')
+    expect(new URL(socketUrl).searchParams.get('input_ack')).toBe('1')
     expect(requests).toEqual([
       'GET /api/experimental/persistent-pty/pty_123',
       'GET /api/experimental/persistent-pty/pty_123',

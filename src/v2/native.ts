@@ -155,9 +155,11 @@ export class NativePtyClient {
     url.searchParams.set('ticket', token.ticket)
     url.searchParams.set('role', 'controller')
     url.searchParams.set('cursor', '0')
+    url.searchParams.set('input_ack', '1')
     const socket = this.openSocket(url.toString())
     await new Promise<void>((resolve, reject) => {
       let done = false
+      let sent = false
       let timeout: ReturnType<typeof setTimeout> | undefined
       const finish = (error?: Error) => {
         if (done) return
@@ -169,7 +171,10 @@ export class NativePtyClient {
         else resolve()
       }
       const abort = () => finish(new Error('PTY write aborted'))
-      timeout = setTimeout(() => finish(new Error('PTY WebSocket attach timed out')), 10_000)
+      timeout = setTimeout(
+        () => finish(new Error('PTY WebSocket input acknowledgement timed out')),
+        10_000
+      )
       signal?.addEventListener('abort', abort, { once: true })
       socket.addEventListener('message', (event) => {
         if (typeof event.data !== 'string') return
@@ -179,18 +184,24 @@ export class NativePtyClient {
         } catch {
           return
         }
-        if (message.type !== 'attached') return
+        if (message.type === 'input_ack') {
+          if (sent) finish()
+          return
+        }
+        if (message.type !== 'attached' || sent) return
         if (message.role !== 'controller')
           return finish(new Error('PTY connection did not obtain control'))
         try {
           socket.send(data)
-          finish()
+          sent = true
         } catch (error) {
           finish(error as Error)
         }
       })
       socket.addEventListener('error', () => finish(new Error('PTY WebSocket failed')))
-      socket.addEventListener('close', () => finish(new Error('PTY WebSocket closed before write')))
+      socket.addEventListener('close', () =>
+        finish(new Error('PTY WebSocket closed before input acknowledgement'))
+      )
       if (signal?.aborted) abort()
     })
   }
