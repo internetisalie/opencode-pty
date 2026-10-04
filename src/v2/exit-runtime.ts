@@ -37,6 +37,10 @@ export interface ExitJob {
   readonly notifyOnExit: boolean
   notifyOnOutput: boolean
   outputTail: number
+  outputDiagnostic?: {
+    readonly notificationID: string
+    readonly reported: Set<ExitDiagnosticReason>
+  }
   progress: ExitProgress
   cancelPoll?: () => void
   cancelDeadline?: () => void

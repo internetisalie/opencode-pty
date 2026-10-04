@@ -3,9 +3,12 @@ import type { ExitFixture } from './lib/v2-exit-fixture.ts'
 import { fixtureTool, makeExitFixture } from './lib/v2-exit-fixture.ts'
 import {
   acknowledgment,
+  assertAdmission,
   baseInfo,
   context,
   listPath,
+  projected,
+  script,
   snapshotResponse,
 } from './lib/v2-exit-script.ts'
 
@@ -172,5 +175,64 @@ test('output opt-in observes native snapshot tail and preserves independent exit
       await fixture.cleanup()
       expect(fixture.clock.pending()).toBe(0)
     }
+  }
+})
+
+test('exit admission failure reports independently after the same output admission failure', async () => {
+  let exited = false
+  const info = (): Record<string, unknown> =>
+    projected(exited ? 'exited' : 'running', exited ? 7 : undefined)
+  const fixture = await makeExitFixture({
+    request: script({
+      list: async () => Response.json({ data: [info()] }),
+      snapshot: async () => snapshotResponse(info()),
+    }),
+    synthetic: async (input) => ({ ...acknowledgment(input), id: 'msg_mismatched_acknowledgment' }),
+  })
+  try {
+    const spawned = await fixtureTool(fixture, 'pty_spawn').execute(
+      {
+        command: '/bin/sh',
+        args: [],
+        description: 'diagnostics',
+        notifyOnOutput: true,
+        notifyOnExit: true,
+      },
+      context()
+    )
+    await sample(fixture, 0)
+    expect(fixture.admissions).toHaveLength(1)
+    expect(fixture.diagnostics).toHaveLength(1)
+    exited = true
+    await sample(fixture)
+    expect(fixture.admissions).toHaveLength(2)
+    const [output, exit] = fixture.admissions
+    if (!output || !exit) throw new Error('missing output or exit admission')
+    expect(output.metadata.kind).toBe('output')
+    expect(output.id).toMatch(/^msg_pty_output_[0-9a-f-]{36}$/)
+    assertAdmission(exit, 7)
+    expect(spawned.content).toContain(exit.id)
+    expect(output.id).not.toBe(exit.id)
+    expect(fixture.diagnostics).toEqual([
+      {
+        ptyID: baseInfo.id,
+        sessionID: 'ses_A',
+        notificationID: output.id,
+        reason: 'invalid-admission',
+        admission: 'unconfirmed',
+      },
+      {
+        ptyID: baseInfo.id,
+        sessionID: 'ses_A',
+        notificationID: exit.id,
+        reason: 'invalid-admission',
+        admission: 'unconfirmed',
+      },
+    ])
+    await sample(fixture)
+    expect(fixture.diagnostics).toHaveLength(2)
+  } finally {
+    await fixture.cleanup()
+    expect(fixture.clock.pending()).toBe(0)
   }
 })

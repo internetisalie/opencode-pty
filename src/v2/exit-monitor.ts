@@ -161,7 +161,7 @@ export class ExitMonitor {
     if (sample.status === 'running') {
       job.missingSamples = 0
       job.incompleteSamples = 0
-      if (sample.reason) this.diagnostic(job, sample.reason)
+      if (sample.reason) this.diagnostic(job, sample.reason, 'output')
       this.applyOutput(job, sample.outputTail)
       return
     }
@@ -174,12 +174,14 @@ export class ExitMonitor {
 
   private applyOutput(job: ExitJob, tail: number | undefined): void {
     if (!job.notifyOnOutput || tail === undefined || tail <= job.outputTail) return
+    const notificationID = `msg_pty_output_${randomUUID()}`
+    job.outputDiagnostic = { notificationID, reported: new Set() }
     job.progress = {
       status: 'admitting',
       input: outputNotification({
         registration: job.registration,
         outputTail: tail,
-        notificationID: `msg_pty_output_${randomUUID()}`,
+        notificationID,
       }),
     }
   }
@@ -215,6 +217,7 @@ export class ExitMonitor {
       }
       if (input.metadata.kind === 'output') {
         job.outputTail = Number(input.metadata.outputTail)
+        job.outputDiagnostic = undefined
         job.admissionAttempts = 0
         job.progress = { status: 'observing' }
       } else job.progress = { status: 'admitted' }
@@ -241,31 +244,42 @@ export class ExitMonitor {
   private diagnostic(
     job: ExitJob,
     reason: ExitDiagnosticReason,
-    context: 'active' | 'dispose' = 'active'
+    context: 'active' | 'dispose' | 'output' = 'active'
   ): void {
-    if (!this.active && context === 'active') return
-    if (job.reported.has(reason)) return
-    job.reported.add(reason)
+    if (!this.active && context !== 'dispose') return
+    const output =
+      context === 'output' ||
+      (job.progress.status === 'admitting' && job.progress.input.metadata.kind === 'output')
+    if (output && !job.outputDiagnostic)
+      job.outputDiagnostic = {
+        notificationID: `msg_pty_output_${randomUUID()}`,
+        reported: new Set(),
+      }
+    const target =
+      output && job.outputDiagnostic
+        ? job.outputDiagnostic
+        : { notificationID: job.registration.notificationID, reported: job.reported }
+    if (target.reported.has(reason)) return
+    target.reported.add(reason)
     const admission =
       job.progress.status === 'retired'
         ? job.progress.admission
         : job.admissionAttempts > 0
           ? 'unconfirmed'
           : 'not-attempted'
-    this.report({ ...job.registration, reason, admission })
+    this.report({ ...job.registration, notificationID: target.notificationID, reason, admission })
   }
 
   private retire(job: ExitJob, reason: ExitTerminalReason, admission: ExitAdmissionOutcome): void {
-    const continueExit =
-      job.progress.status === 'admitting' &&
-      job.progress.input.metadata.kind === 'output' &&
-      job.notifyOnExit
+    const output =
+      job.progress.status === 'admitting' && job.progress.input.metadata.kind === 'output'
+    const continueExit = output && job.notifyOnExit
     job.cancelPoll?.()
     job.cancelDeadline?.()
     job.cancelPoll = undefined
     job.cancelDeadline = undefined
     job.progress = { status: 'retired', reason, admission }
-    this.diagnostic(job, reason)
+    this.diagnostic(job, reason, output ? 'output' : 'active')
     if (continueExit) {
       job.notifyOnOutput = false
       job.admissionAttempts = 0
