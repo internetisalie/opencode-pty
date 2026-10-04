@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'bun:test'
-import { NativePtyClient, nativeTools, Plugin } from '../src/v2/index.ts'
+import { Plugin } from '../src/v2/index.ts'
+import { NativePtyClient } from '../src/v2/native.ts'
+import { nativeTools } from '../src/v2/tools.ts'
 import type { ToolInfoV2 } from '../src/v2/types.ts'
 
 const info = {
@@ -50,6 +52,11 @@ describe('OpenCode v2 native PTY adapter', () => {
     let disposed = false
     const cleanup = await Plugin.setup({
       options: { serverUrl: 'http://127.0.0.1:9876/' },
+      session: {
+        synthetic: async () => {
+          throw new Error('unexpected synthetic')
+        },
+      },
       tool: {
         transform: async (fn) => {
           fn({ add: (tool) => added.push(tool) })

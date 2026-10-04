@@ -1,3 +1,5 @@
+import type { ExitMonitor } from './exit-monitor.ts'
+import type { ExitEnrollment } from './exit-runtime.ts'
 import type { NativePtyClient, NativePtyInfo } from './native.ts'
 import type { ToolContextV2, ToolInfoV2 } from './types.ts'
 
@@ -54,7 +56,13 @@ function lines(content: string, offset = 0, limit = 500, pattern?: string, ignor
   return { total: all.length, value: all.slice(offset, offset + limit).join('\n') }
 }
 
-export function nativeTools(client: NativePtyClient): ToolInfoV2[] {
+function spawnNotificationLine(enrollment: ExitEnrollment | undefined): string {
+  return enrollment?.status === 'registered'
+    ? `Exit notification: ${enrollment.notificationID}. Exit monitoring is activation-local; plugin/server restart loses opt-in and uncertain retry state.`
+    : 'Exit monitoring unavailable; PTY retained, no notification promised.'
+}
+
+export function nativeTools(client: NativePtyClient, monitor?: ExitMonitor): ToolInfoV2[] {
   return [
     {
       name: 'pty_spawn',
@@ -67,6 +75,7 @@ export function nativeTools(client: NativePtyClient): ToolInfoV2[] {
           env: { type: 'object', additionalProperties: string },
           title: string,
           description: string,
+          notifyOnExit: bool,
         },
         ['command', 'args', 'description']
       ),
@@ -79,11 +88,13 @@ export function nativeTools(client: NativePtyClient): ToolInfoV2[] {
           env?: Record<string, string>
           title?: string
           description: string
+          notifyOnExit?: boolean
         },
         ctx
       ) {
+        const sessionID = ctx.sessionID
         const info = await client.create(
-          ctx.sessionID,
+          sessionID,
           {
             command: args.command,
             args: args.args,
@@ -93,9 +104,15 @@ export function nativeTools(client: NativePtyClient): ToolInfoV2[] {
           },
           ctx.signal
         )
-        return text(
-          `<pty_spawned>\nID: ${info.id}\nTitle: ${info.title}\nStatus: ${info.status}\nPID: ${info.pid}\n</pty_spawned>`
-        )
+        let content = `<pty_spawned>\nID: ${info.id}\nTitle: ${info.title}\nStatus: ${info.status}\nPID: ${info.pid}\n</pty_spawned>`
+        if (args.notifyOnExit === true) {
+          if (typeof info.id !== 'string' || !info.id || info.sessionID !== sessionID) {
+            throw new Error('created PTY identity mismatch')
+          }
+          const enrollment = monitor?.register({ ptyID: info.id, sessionID })
+          content += `\n${spawnNotificationLine(enrollment)}\nExit monitoring retires after bounded missing/incomplete observations or settled admission failures; diagnostics report non-delivery or unconfirmed admission.`
+        }
+        return text(content)
       },
     },
     {

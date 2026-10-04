@@ -23,11 +23,37 @@ export interface ToolInfoV2 {
 
 export interface PluginContextV2 {
   readonly options: OpencodePtyOptions & Record<string, unknown>
+  readonly session: {
+    synthetic(input: PtyExitInput): Promise<PtyExitAdmission>
+  }
   readonly tool: {
     transform(
       callback: (draft: { add(tool: ToolInfoV2): void }) => void
     ): Promise<{ dispose(): Promise<void> }>
   }
+}
+
+export interface PtyExitInput {
+  readonly sessionID: string
+  readonly id: string
+  readonly text: string
+  readonly description: string
+  readonly metadata: Readonly<Record<string, string | number>>
+  readonly delivery: 'steer'
+  readonly resume: true
+}
+
+export interface PtyExitAdmission {
+  readonly id: string
+  readonly sessionID: string
+  readonly type: 'synthetic'
+  readonly time: { readonly created: number }
+  readonly payload: {
+    readonly text: string
+    readonly description?: string
+    readonly metadata?: Readonly<Record<string, unknown>>
+  }
+  readonly delivery: 'steer' | 'queue'
 }
 
 export interface PluginV2 {
