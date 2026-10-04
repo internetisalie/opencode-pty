@@ -19,10 +19,15 @@ async function sampleExit(options: ExitObservationOptions): Promise<ExitSample> 
   const targets = listed.filter((info) => info.ptyID === job.registration.ptyID)
   if (targets.length === 0) return { status: 'incomplete', reason: 'missing-pty' }
   if (targets.length !== 1) return { status: 'incomplete', reason: 'duplicate-pty' }
-  const snapshot = decodeExitSnapshot(await client.snapshot(job.registration.ptyID, signal))
+  const nativeSnapshot = await client.snapshot(job.registration.ptyID, signal)
+  const snapshot = decodeExitSnapshot(nativeSnapshot)
   if (!active()) return { status: 'running' }
   const result = classifyExit({ registration: job.registration, listed, snapshot })
-  return result
+  if (result.status !== 'running' || !job.notifyOnOutput) return result
+  const tail: unknown = nativeSnapshot.info.output?.tail
+  if (typeof tail !== 'number' || !Number.isInteger(tail) || tail < 0)
+    return { status: 'running', reason: 'invalid-snapshot' }
+  return { status: 'running', outputTail: tail }
 }
 
 export async function observeExit(options: ExitObservationOptions): Promise<ExitSample> {

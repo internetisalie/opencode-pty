@@ -34,6 +34,13 @@ export type ExitProgress =
 
 export interface ExitJob {
   readonly registration: ExitRegistration
+  readonly notifyOnExit: boolean
+  notifyOnOutput: boolean
+  outputTail: number
+  outputDiagnostic?: {
+    readonly notificationID: string
+    readonly reported: Set<ExitDiagnosticReason>
+  }
   progress: ExitProgress
   cancelPoll?: () => void
   cancelDeadline?: () => void

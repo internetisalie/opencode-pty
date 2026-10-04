@@ -13,7 +13,7 @@ import {
 import type { ExitClock, ExitDiagnostic, ExitEnrollment, ExitJob } from './exit-runtime.ts'
 import { EXIT_POLL_MS, reportExitDiagnostic, systemExitClock } from './exit-runtime.ts'
 import type { ExitSample } from './exit-state.ts'
-import { exitNotification } from './exit-state.ts'
+import { exitNotification, outputNotification } from './exit-state.ts'
 import type { NativePtyClient } from './native.ts'
 import type { PtyExitAdmission, PtyExitInput } from './types.ts'
 
@@ -36,18 +36,27 @@ export class ExitMonitor {
     this.report = options.report ?? reportExitDiagnostic
   }
 
-  register(options: { readonly ptyID: string; readonly sessionID: string }): ExitEnrollment {
+  register(options: {
+    readonly ptyID: string
+    readonly sessionID: string
+    readonly notifyOnExit?: boolean
+    readonly notifyOnOutput?: boolean
+  }): ExitEnrollment {
     if (!this.active) return { status: 'unavailable', reason: 'disposed' }
     const key = JSON.stringify([options.sessionID, options.ptyID])
     const existing = this.jobs.get(key)
     if (existing)
       return { status: 'registered', notificationID: existing.registration.notificationID }
     const registration = Object.freeze({
-      ...options,
+      ptyID: options.ptyID,
+      sessionID: options.sessionID,
       notificationID: `msg_pty_exit_${randomUUID()}`,
     })
     const job: ExitJob = {
       registration,
+      notifyOnExit: options.notifyOnExit !== false,
+      notifyOnOutput: options.notifyOnOutput === true,
+      outputTail: 0,
       progress: { status: 'observing' },
       missingSamples: 0,
       incompleteSamples: 0,
@@ -141,15 +150,19 @@ export class ExitMonitor {
 
   private applySample(job: ExitJob, sample: ExitSample): void {
     if (sample.status === 'exited') {
-      job.progress = {
-        status: 'admitting',
-        input: exitNotification({ registration: job.registration, exitCode: sample.exitCode }),
-      }
+      job.progress = !job.notifyOnExit
+        ? { status: 'admitted' }
+        : {
+            status: 'admitting',
+            input: exitNotification({ registration: job.registration, exitCode: sample.exitCode }),
+          }
       return
     }
     if (sample.status === 'running') {
       job.missingSamples = 0
       job.incompleteSamples = 0
+      if (sample.reason) this.diagnostic(job, sample.reason, 'output')
+      this.applyOutput(job, sample.outputTail)
       return
     }
     this.diagnostic(job, sample.reason)
@@ -157,6 +170,20 @@ export class ExitMonitor {
     job.missingSamples = sample.reason === 'missing-pty' ? job.missingSamples + 1 : 0
     const reason = observationRetirement(job)
     if (reason) this.retire(job, reason, 'not-attempted')
+  }
+
+  private applyOutput(job: ExitJob, tail: number | undefined): void {
+    if (!job.notifyOnOutput || tail === undefined || tail <= job.outputTail) return
+    const notificationID = `msg_pty_output_${randomUUID()}`
+    job.outputDiagnostic = { notificationID, reported: new Set() }
+    job.progress = {
+      status: 'admitting',
+      input: outputNotification({
+        registration: job.registration,
+        outputTail: tail,
+        notificationID,
+      }),
+    }
   }
 
   private observe(job: ExitJob): Promise<ExitSample> {
@@ -188,7 +215,12 @@ export class ExitMonitor {
         this.retire(job, 'invalid-admission', 'unconfirmed')
         return
       }
-      job.progress = { status: 'admitted' }
+      if (input.metadata.kind === 'output') {
+        job.outputTail = Number(input.metadata.outputTail)
+        job.outputDiagnostic = undefined
+        job.admissionAttempts = 0
+        job.progress = { status: 'observing' }
+      } else job.progress = { status: 'admitted' }
     } catch (error) {
       if (!this.active) return
       this.admissionFailed(job, classifyAdmissionFailure({ error, input }).status)
@@ -212,26 +244,47 @@ export class ExitMonitor {
   private diagnostic(
     job: ExitJob,
     reason: ExitDiagnosticReason,
-    context: 'active' | 'dispose' = 'active'
+    context: 'active' | 'dispose' | 'output' = 'active'
   ): void {
-    if (!this.active && context === 'active') return
-    if (job.reported.has(reason)) return
-    job.reported.add(reason)
+    if (!this.active && context !== 'dispose') return
+    const output =
+      context === 'output' ||
+      (job.progress.status === 'admitting' && job.progress.input.metadata.kind === 'output')
+    if (output && !job.outputDiagnostic)
+      job.outputDiagnostic = {
+        notificationID: `msg_pty_output_${randomUUID()}`,
+        reported: new Set(),
+      }
+    const target =
+      output && job.outputDiagnostic
+        ? job.outputDiagnostic
+        : { notificationID: job.registration.notificationID, reported: job.reported }
+    if (target.reported.has(reason)) return
+    target.reported.add(reason)
     const admission =
       job.progress.status === 'retired'
         ? job.progress.admission
         : job.admissionAttempts > 0
           ? 'unconfirmed'
           : 'not-attempted'
-    this.report({ ...job.registration, reason, admission })
+    this.report({ ...job.registration, notificationID: target.notificationID, reason, admission })
   }
 
   private retire(job: ExitJob, reason: ExitTerminalReason, admission: ExitAdmissionOutcome): void {
+    const output =
+      job.progress.status === 'admitting' && job.progress.input.metadata.kind === 'output'
+    const continueExit = output && job.notifyOnExit
     job.cancelPoll?.()
     job.cancelDeadline?.()
     job.cancelPoll = undefined
     job.cancelDeadline = undefined
     job.progress = { status: 'retired', reason, admission }
-    this.diagnostic(job, reason)
+    this.diagnostic(job, reason, output ? 'output' : 'active')
+    if (continueExit) {
+      job.notifyOnOutput = false
+      job.admissionAttempts = 0
+      job.progress = { status: 'observing' }
+      this.schedule(job, EXIT_POLL_MS)
+    }
   }
 }
