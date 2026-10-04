@@ -76,6 +76,7 @@ export function nativeTools(client: NativePtyClient, monitor?: ExitMonitor): Too
           title: string,
           description: string,
           notifyOnExit: bool,
+          notifyOnOutput: bool,
         },
         ['command', 'args', 'description']
       ),
@@ -89,6 +90,7 @@ export function nativeTools(client: NativePtyClient, monitor?: ExitMonitor): Too
           title?: string
           description: string
           notifyOnExit?: boolean
+          notifyOnOutput?: boolean
         },
         ctx
       ) {
@@ -105,12 +107,23 @@ export function nativeTools(client: NativePtyClient, monitor?: ExitMonitor): Too
           ctx.signal
         )
         let content = `<pty_spawned>\nID: ${info.id}\nTitle: ${info.title}\nStatus: ${info.status}\nPID: ${info.pid}\n</pty_spawned>`
-        if (args.notifyOnExit === true) {
+        if (args.notifyOnExit === true || args.notifyOnOutput === true) {
           if (typeof info.id !== 'string' || !info.id || info.sessionID !== sessionID) {
             throw new Error('created PTY identity mismatch')
           }
-          const enrollment = monitor?.register({ ptyID: info.id, sessionID })
-          content += `\n${spawnNotificationLine(enrollment)}\nExit monitoring retires after bounded missing/incomplete observations or settled admission failures; diagnostics report non-delivery or unconfirmed admission.`
+          const enrollment = monitor?.register({
+            ptyID: info.id,
+            sessionID,
+            notifyOnExit: args.notifyOnExit === true,
+            notifyOnOutput: args.notifyOnOutput === true,
+          })
+          if (args.notifyOnExit === true)
+            content += `\n${spawnNotificationLine(enrollment)}\nExit monitoring retires after bounded missing/incomplete observations or settled admission failures; diagnostics report non-delivery or unconfirmed admission.`
+          if (args.notifyOnOutput === true)
+            content +=
+              enrollment?.status === 'registered'
+                ? '\nOutput notifications observe sampled native cursor advances while running; monitoring is activation-local.'
+                : '\nOutput monitoring unavailable; PTY retained, no notification promised.'
         }
         return text(content)
       },

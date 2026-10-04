@@ -34,6 +34,9 @@ export type ExitProgress =
 
 export interface ExitJob {
   readonly registration: ExitRegistration
+  readonly notifyOnExit: boolean
+  notifyOnOutput: boolean
+  outputTail: number
   progress: ExitProgress
   cancelPoll?: () => void
   cancelDeadline?: () => void

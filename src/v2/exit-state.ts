@@ -35,7 +35,11 @@ export type PtyExitState =
     }
 
 export type ExitSample =
-  | { readonly status: 'running' }
+  | {
+      readonly status: 'running'
+      readonly outputTail?: number
+      readonly reason?: 'invalid-snapshot'
+    }
   | { readonly status: 'incomplete'; readonly reason: ExitObservationReason }
   | { readonly status: 'exited'; readonly exitCode: number; readonly text: string }
 
@@ -162,6 +166,31 @@ export function exitNotification(options: {
       ptyID,
       sessionID,
       exitCode: code,
+    }),
+    delivery: 'steer',
+    resume: true,
+  })
+}
+
+export function outputNotification(options: {
+  readonly registration: ExitRegistration
+  readonly outputTail: number
+  readonly notificationID: string
+}): PtyExitInput {
+  const { ptyID, sessionID } = options.registration
+  const { outputTail, notificationID } = options
+  return Object.freeze({
+    sessionID,
+    id: notificationID,
+    text: `<pty_output_available>\n${JSON.stringify({ ptyID, sessionID })}\nNew output is available. Use pty_read to inspect retained output.\n</pty_output_available>`,
+    description: 'Background PTY produced output',
+    metadata: Object.freeze({
+      source: 'opencode-pty',
+      kind: 'output',
+      notificationID,
+      ptyID,
+      sessionID,
+      outputTail,
     }),
     delivery: 'steer',
     resume: true,

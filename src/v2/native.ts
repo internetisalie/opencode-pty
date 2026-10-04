@@ -9,6 +9,7 @@ export interface NativePtyInfo {
   pid: number
   exitCode?: number
   size: { cols: number; rows: number }
+  output?: { head: number; tail: number }
 }
 
 export interface NativePtySnapshot {
