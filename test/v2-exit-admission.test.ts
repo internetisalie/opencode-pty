@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import type { PtyExitAdmission, PtyExitInput } from '../src/v2/types.ts'
+import { EXIT_ADMIT_WARN_MS } from '../src/v2/exit-runtime.ts'
 import { eventually } from './lib/v2-exit-fixture.ts'
 import { acknowledgment, assertDiagnostic, exitFixture, spawn } from './lib/v2-exit-script.ts'
 
@@ -139,3 +140,40 @@ for (const field of ['id', 'sessionID', 'type'] as const) {
     }
   })
 }
+
+// loom:tc LDV-233
+test('an admission that does not settle is named once and not retried', async () => {
+  const held = Promise.withResolvers<PtyExitAdmission>()
+  const fixture = await exitFixture({
+    synthetic: async (input) =>
+      fixture.admissions.length === 1 ? held.promise : acknowledgment(input),
+  })
+  try {
+    await spawn(fixture)
+    fixture.clock.advance(0)
+    await eventually(() => fixture.admissions.length === 1)
+    expect(fixture.diagnostics).toHaveLength(0)
+    fixture.clock.advance(EXIT_ADMIT_WARN_MS)
+    expect(fixture.diagnostics.map((item) => item.reason)).toEqual(['admission-slow'])
+    fixture.clock.advance(60000)
+    expect(fixture.admissions).toHaveLength(1)
+    expect(fixture.diagnostics.map((item) => item.reason)).toEqual(['admission-slow'])
+    held.resolve(acknowledgment(fixture.admissions[0] as PtyExitInput))
+    await eventually(() => fixture.diagnostics.some((item) => item.reason === 'admitted'))
+  } finally {
+    await fixture.cleanup()
+  }
+})
+
+// loom:tc LDV-233
+test('a settled admission is logged as admitted', async () => {
+  const fixture = await exitFixture({ synthetic: async (input) => acknowledgment(input) })
+  try {
+    await spawn(fixture)
+    fixture.clock.advance(0)
+    await eventually(() => fixture.diagnostics.length === 1)
+    expect(fixture.diagnostics[0]).toMatchObject({ reason: 'admitted', admission: 'confirmed' })
+  } finally {
+    await fixture.cleanup()
+  }
+})

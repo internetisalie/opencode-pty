@@ -11,7 +11,12 @@ import {
   observationRetirement,
 } from './exit-policy.ts'
 import type { ExitClock, ExitDiagnostic, ExitEnrollment, ExitJob } from './exit-runtime.ts'
-import { EXIT_POLL_MS, reportExitDiagnostic, systemExitClock } from './exit-runtime.ts'
+import {
+  EXIT_ADMIT_WARN_MS,
+  EXIT_POLL_MS,
+  reportExitDiagnostic,
+  systemExitClock,
+} from './exit-runtime.ts'
 import type { ExitSample } from './exit-state.ts'
 import { exitNotification, outputNotification } from './exit-state.ts'
 import type { NativePtyClient } from './native.ts'
@@ -199,8 +204,16 @@ export class ExitMonitor {
     if (!this.active || job.progress.status !== 'admitting') return
     const input = job.progress.input
     job.admissionAttempts++
+    // The host call is awaited without a bound by design (one admission at a time per job). A call that
+    // never settles leaves the job in `admitting` and would otherwise be silent, so name it once.
+    job.cancelDeadline = this.clock.after(EXIT_ADMIT_WARN_MS, () => {
+      job.cancelDeadline = undefined
+      this.diagnostic(job, 'admission-slow')
+    })
     try {
       const acknowledgment: unknown = await this.options.synthetic(input)
+      job.cancelDeadline?.()
+      job.cancelDeadline = undefined
       if (!this.active) return
       if (
         typeof acknowledgment !== 'object' ||
@@ -215,6 +228,12 @@ export class ExitMonitor {
         this.retire(job, 'invalid-admission', 'unconfirmed')
         return
       }
+      this.report({
+        ...job.registration,
+        notificationID: input.id,
+        reason: 'admitted',
+        admission: 'confirmed',
+      })
       if (input.metadata.kind === 'output') {
         job.outputTail = Number(input.metadata.outputTail)
         job.outputDiagnostic = undefined
@@ -222,6 +241,8 @@ export class ExitMonitor {
         job.progress = { status: 'observing' }
       } else job.progress = { status: 'admitted' }
     } catch (error) {
+      job.cancelDeadline?.()
+      job.cancelDeadline = undefined
       if (!this.active) return
       this.admissionFailed(job, classifyAdmissionFailure({ error, input }).status)
     }
