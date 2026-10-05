@@ -20,6 +20,9 @@ export type ExitDiagnosticReason =
   | 'admitted'
   | 'disposed-registration-lost'
   | 'disposed-admission-may-have-committed'
+  | 'adopted'
+  | 'registration-store-failed'
+  | 'watch-end-unconfirmed'
 export type ExitAdmissionFailure =
   | { readonly status: 'session-missing' }
   | { readonly status: 'conflict' }

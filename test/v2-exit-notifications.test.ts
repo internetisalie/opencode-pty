@@ -26,7 +26,7 @@ test('TC-01 explicit true', async () => {
     const content = await spawn(fixture)
     expect(fixture.clock.pending()).toBe(1)
     expect(content).toContain(
-      'Exit monitoring is activation-local; plugin/server restart loses opt-in and uncertain retry state.'
+      'The watch is stored and re-adopted after a plugin or server restart; pty_watch restarts one that retired.'
     )
     expect(content).toContain(
       'Exit monitoring retires after bounded missing/incomplete observations or settled admission failures; a terminal seen running that then leaves the list is reported as exited with an unknown exit code; diagnostics report non-delivery, unconfirmed or slow admission, and each confirmed admission.'

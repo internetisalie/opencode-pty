@@ -46,7 +46,7 @@ function requiredTool(client: NativePtyClient, name: string): ToolInfoV2 {
 }
 
 describe('OpenCode v2 native PTY adapter', () => {
-  it('registers all five tools with the actual v2 tool editor and disposes them', async () => {
+  it('registers all six tools with the actual v2 tool editor and disposes them', async () => {
     expect(Plugin.id).toBe('opencode-pty')
     const added: ToolInfoV2[] = []
     let disposed = false
@@ -73,6 +73,7 @@ describe('OpenCode v2 native PTY adapter', () => {
       'pty_write',
       'pty_read',
       'pty_list',
+      'pty_watch',
       'pty_kill',
     ])
     await cleanup?.()

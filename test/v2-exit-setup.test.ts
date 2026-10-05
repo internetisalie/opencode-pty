@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { memoryRegistrationStore } from '../src/v2/registration-store.ts'
 import { setupPtyPlugin } from '../src/v2/setup.ts'
 import type { PtyExitInput, ToolInfoV2 } from '../src/v2/types.ts'
 import { deferred, eventually, TestExitClock } from './lib/v2-exit-fixture.ts'
@@ -83,6 +84,8 @@ test('session synthetic receiver and independent jobs are preserved', async () =
     {
       clock,
       report: () => {},
+      private: true,
+      store: memoryRegistrationStore(),
       fetch: async (url, init) => {
         if (init?.method === 'POST')
           return Response.json({ data: { ...baseInfo, id: `pty_persistent_${++creates}` } })

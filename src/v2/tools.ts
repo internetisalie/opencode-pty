@@ -58,7 +58,7 @@ function lines(content: string, offset = 0, limit = 500, pattern?: string, ignor
 
 function spawnNotificationLine(enrollment: ExitEnrollment | undefined): string {
   return enrollment?.status === 'registered'
-    ? `Exit notification: ${enrollment.notificationID}. Exit monitoring is activation-local; plugin/server restart loses opt-in and uncertain retry state.`
+    ? `Exit notification: ${enrollment.notificationID}. The watch is stored and re-adopted after a plugin or server restart; pty_watch restarts one that retired.`
     : 'Exit monitoring unavailable; PTY retained, no notification promised.'
 }
 
@@ -122,7 +122,7 @@ export function nativeTools(client: NativePtyClient, monitor?: ExitMonitor): Too
           if (args.notifyOnOutput === true)
             content +=
               enrollment?.status === 'registered'
-                ? '\nOutput notifications observe sampled native cursor advances while running; monitoring is activation-local.'
+                ? '\nOutput notifications observe sampled native cursor advances while running; the watch is stored and re-adopted after a plugin or server restart.'
                 : '\nOutput monitoring unavailable; PTY retained, no notification promised.'
         }
         return text(content)
@@ -179,6 +179,35 @@ export function nativeTools(client: NativePtyClient, monitor?: ExitMonitor): Too
         const items = await client.list(ctx.sessionID, ctx.signal)
         return text(
           `<pty_list>\n${items.map((item) => `${item.id} ${item.status} ${item.title}`).join('\n')}\n</pty_list>`
+        )
+      },
+    },
+    {
+      name: 'pty_watch',
+      description:
+        'Start or restart exit and output notifications for a native persistent terminal owned by this session, without respawning it.',
+      input: input({ id: string, notifyOnExit: bool, notifyOnOutput: bool }, ['id']),
+      options: { permission: 'pty_read' },
+      async execute(args: { id: string; notifyOnExit?: boolean; notifyOnOutput?: boolean }, ctx) {
+        if (args.notifyOnExit === false && args.notifyOnOutput !== true)
+          throw new Error('nothing to watch: enable notifyOnExit or notifyOnOutput')
+        const info = await owned(client, args.id, ctx)
+        if (info.status !== 'running') throw new Error(`PTY ${args.id} is not running`)
+        const enrollment = monitor?.register({
+          ptyID: args.id,
+          sessionID: ctx.sessionID,
+          notifyOnExit: args.notifyOnExit !== false,
+          notifyOnOutput: args.notifyOnOutput === true,
+          restart: true,
+        })
+        if (enrollment?.status !== 'registered')
+          return text('Monitoring unavailable; PTY retained, no notification promised.')
+        const watching = enrollment.watching ?? { exit: true, output: args.notifyOnOutput === true }
+        const kinds = [watching.exit ? 'exit' : '', watching.output ? 'output' : '']
+          .filter(Boolean)
+          .join(' and ')
+        return text(
+          `Watching PTY ${args.id}: ${kinds} notifications. An output notice fires when new output arrives; the first one can report output printed before the watch began.`
         )
       },
     },

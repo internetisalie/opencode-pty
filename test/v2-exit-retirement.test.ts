@@ -36,7 +36,11 @@ for (const kind of ['missing', 'incomplete', 'alternating'] as const) {
         kind === 'missing' ? 'observation-missing-exhausted' : 'observation-incomplete-exhausted'
       )
       assertDiagnostic(fixture, kind === 'missing' ? 'missing-pty' : 'read-failed')
-      expect(fixture.admissions).toHaveLength(0)
+      expect(fixture.admissions.map((input) => input.metadata.kind)).toEqual(['watch-ended'])
+      expect(fixture.admissions[0]?.metadata.reason).toBe(
+        kind === 'missing' ? 'observation-missing-exhausted' : 'observation-incomplete-exhausted'
+      )
+      expect(fixture.admissions[0]?.text).toContain('pty_watch')
       expect(fixture.clock.pending()).toBe(0)
       const count = fixture.requests.length
       fixture.clock.advance(60000)

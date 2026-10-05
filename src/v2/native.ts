@@ -24,6 +24,18 @@ export interface NativePtyOptions {
   openSocket?: (url: string) => WebSocket
 }
 
+/** A non-success reply from the OpenCode server, kept structured so callers can tell a missing session from a failure. */
+export class NativeHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly detail: string
+  ) {
+    super(message)
+    this.name = 'NativeHttpError'
+  }
+}
+
 export class NativePtyClient {
   private readonly base?: URL
   private readonly password?: string
@@ -76,8 +88,10 @@ export class NativePtyClient {
     })
     if (!response.ok) {
       const detail = await response.text()
-      throw new Error(
-        `OpenCode PTY ${method} ${path} failed (${response.status}): ${detail.slice(0, 500)}`
+      throw new NativeHttpError(
+        `OpenCode PTY ${method} ${path} failed (${response.status}): ${detail.slice(0, 500)}`,
+        response.status,
+        detail
       )
     }
     if (response.status === 204) return undefined as T
@@ -93,6 +107,38 @@ export class NativePtyClient {
       undefined,
       signal
     )
+  }
+
+  /**
+   * Adds a synthetic message to a session over the server's own API. The server finds the session's
+   * location itself and wakes it, so this works when no plugin instance exists, which a delivery through a
+   * plugin instance's session service does not. Failures use the shapes the delivery policy classifies.
+   */
+  async synthetic(input: {
+    readonly sessionID: string
+    readonly id: string
+    readonly text: string
+    readonly description: string
+    readonly metadata: Readonly<Record<string, string | number>>
+    readonly delivery: 'steer'
+    readonly resume: true
+  }): Promise<unknown> {
+    const { sessionID, id, text, description, metadata, delivery, resume } = input
+    try {
+      return await this.request<unknown>(
+        'POST',
+        `api/session/${encodeURIComponent(sessionID)}/synthetic`,
+        { id, text, description, metadata, delivery, resume }
+      )
+    } catch (error) {
+      if (error instanceof NativeHttpError && error.status === 404 && /NotFound/.test(error.detail))
+        throw { _tag: 'Session.NotFoundError', sessionID }
+      // 409 is either an id that conflicts with a stored record or a session owned by another instance;
+      // both mean this server will not take the notice, which the policy treats as a rejection.
+      if (error instanceof NativeHttpError && error.status === 409)
+        throw { _tag: 'Session.SyntheticConflictError', sessionID, inputID: id }
+      throw error
+    }
   }
 
   create(
