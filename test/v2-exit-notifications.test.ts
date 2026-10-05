@@ -29,7 +29,7 @@ test('TC-01 explicit true', async () => {
       'Exit monitoring is activation-local; plugin/server restart loses opt-in and uncertain retry state.'
     )
     expect(content).toContain(
-      'Exit monitoring retires after bounded missing/incomplete observations or settled admission failures; diagnostics report non-delivery or unconfirmed admission.'
+      'Exit monitoring retires after bounded missing/incomplete observations or settled admission failures; diagnostics report non-delivery, unconfirmed or slow admission, and each confirmed admission.'
     )
     fixture.clock.advance(0)
     await eventually(() => fixture.admissions.length === 1 && fixture.clock.pending() === 0)
@@ -179,7 +179,9 @@ test('TC-08 delayed failed admission', async () => {
     expect(fixture.admissions).toHaveLength(1)
     expect(fixture.clock.pending()).toBe(0)
     held.reject(new Error('scripted loss'))
-    await eventually(() => fixture.diagnostics.length === 1)
+    await eventually(() =>
+      fixture.diagnostics.some((item) => item.reason === 'admission-unconfirmed')
+    )
     await Bun.sleep(0)
     fixture.clock.advance(1000)
     await eventually(() => fixture.admissions.length === 2)

@@ -1,7 +1,7 @@
 import type { ExitObservationReason } from './exit-state.ts'
 import type { PtyExitInput } from './types.ts'
 
-export type ExitAdmissionOutcome = 'not-attempted' | 'rejected' | 'unconfirmed'
+export type ExitAdmissionOutcome = 'not-attempted' | 'rejected' | 'unconfirmed' | 'confirmed'
 export type ExitTerminalReason =
   | 'observation-missing-exhausted'
   | 'observation-incomplete-exhausted'
@@ -14,6 +14,8 @@ export type ExitDiagnosticReason =
   | ExitObservationReason
   | ExitTerminalReason
   | 'admission-unconfirmed'
+  | 'admission-slow'
+  | 'admitted'
   | 'disposed-registration-lost'
   | 'disposed-admission-may-have-committed'
 export type ExitAdmissionFailure =

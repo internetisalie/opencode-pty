@@ -118,7 +118,7 @@ export function nativeTools(client: NativePtyClient, monitor?: ExitMonitor): Too
             notifyOnOutput: args.notifyOnOutput === true,
           })
           if (args.notifyOnExit === true)
-            content += `\n${spawnNotificationLine(enrollment)}\nExit monitoring retires after bounded missing/incomplete observations or settled admission failures; diagnostics report non-delivery or unconfirmed admission.`
+            content += `\n${spawnNotificationLine(enrollment)}\nExit monitoring retires after bounded missing/incomplete observations or settled admission failures; diagnostics report non-delivery, unconfirmed or slow admission, and each confirmed admission.`
           if (args.notifyOnOutput === true)
             content +=
               enrollment?.status === 'registered'

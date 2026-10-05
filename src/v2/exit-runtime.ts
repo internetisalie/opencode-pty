@@ -54,6 +54,7 @@ export interface ExitJob {
 
 export const EXIT_POLL_MS: number = 1000
 export const EXIT_READ_MS: number = 5000
+export const EXIT_ADMIT_WARN_MS: number = 10000
 
 export const systemExitClock: ExitClock = {
   after(delayMS: number, callback: () => void): () => void {
