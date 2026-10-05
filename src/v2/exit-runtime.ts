@@ -37,6 +37,7 @@ export interface ExitJob {
   readonly notifyOnExit: boolean
   notifyOnOutput: boolean
   outputTail: number
+  sawRunning: boolean
   outputDiagnostic?: {
     readonly notificationID: string
     readonly reported: Set<ExitDiagnosticReason>

@@ -118,7 +118,7 @@ export function nativeTools(client: NativePtyClient, monitor?: ExitMonitor): Too
             notifyOnOutput: args.notifyOnOutput === true,
           })
           if (args.notifyOnExit === true)
-            content += `\n${spawnNotificationLine(enrollment)}\nExit monitoring retires after bounded missing/incomplete observations or settled admission failures; diagnostics report non-delivery, unconfirmed or slow admission, and each confirmed admission.`
+            content += `\n${spawnNotificationLine(enrollment)}\nExit monitoring retires after bounded missing/incomplete observations or settled admission failures; a terminal seen running that then leaves the list is reported as exited with an unknown exit code; diagnostics report non-delivery, unconfirmed or slow admission, and each confirmed admission.`
           if (args.notifyOnOutput === true)
             content +=
               enrollment?.status === 'registered'
@@ -190,6 +190,7 @@ export function nativeTools(client: NativePtyClient, monitor?: ExitMonitor): Too
       async execute(args: { id: string }, ctx) {
         await owned(client, args.id, ctx)
         await client.remove(args.id, ctx.signal)
+        monitor?.unregister({ ptyID: args.id, sessionID: ctx.sessionID })
         return text(`Removed PTY ${args.id}`)
       },
     },

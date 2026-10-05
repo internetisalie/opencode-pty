@@ -29,7 +29,7 @@ test('TC-01 explicit true', async () => {
       'Exit monitoring is activation-local; plugin/server restart loses opt-in and uncertain retry state.'
     )
     expect(content).toContain(
-      'Exit monitoring retires after bounded missing/incomplete observations or settled admission failures; diagnostics report non-delivery, unconfirmed or slow admission, and each confirmed admission.'
+      'Exit monitoring retires after bounded missing/incomplete observations or settled admission failures; a terminal seen running that then leaves the list is reported as exited with an unknown exit code; diagnostics report non-delivery, unconfirmed or slow admission, and each confirmed admission.'
     )
     fixture.clock.advance(0)
     await eventually(() => fixture.admissions.length === 1 && fixture.clock.pending() === 0)
