@@ -197,3 +197,29 @@ export function outputNotification(options: {
     resume: true,
   })
 }
+
+/** Tells the session its notifications stopped, so a silent watch cannot go unnoticed. */
+export function watchEndedNotification(options: {
+  readonly registration: ExitRegistration
+  readonly reason: string
+  readonly notificationID: string
+}): PtyExitInput {
+  const { ptyID, sessionID } = options.registration
+  const { reason, notificationID } = options
+  return Object.freeze({
+    sessionID,
+    id: notificationID,
+    text: `<pty_watch_ended>\n${JSON.stringify({ ptyID, sessionID, reason })}\nNotifications for this terminal stopped. Use pty_watch to restart them, or pty_read to inspect the terminal.\n</pty_watch_ended>`,
+    description: 'Background PTY watch ended',
+    metadata: Object.freeze({
+      source: 'opencode-pty',
+      kind: 'watch-ended',
+      notificationID,
+      ptyID,
+      sessionID,
+      reason,
+    }),
+    delivery: 'steer',
+    resume: true,
+  })
+}

@@ -48,7 +48,7 @@ describe('npm pack structure', () => {
     expect(metadata.code).toBe(0)
     expect(JSON.parse(metadata.stdout)).toMatchObject({
       name: '@internetisalie/opencode-pty',
-      version: '0.5.2',
+      version: '0.5.3',
       publishConfig: { registry: 'https://npm.pkg.github.com' },
       exports: {
         '.': { default: './dist/src/v2/index.js' },

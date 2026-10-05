@@ -1,4 +1,7 @@
+import { randomUUID } from 'node:crypto'
 import type { ExitClock, ExitDiagnostic } from '../../src/v2/exit-runtime.ts'
+import type { RegistrationStore } from '../../src/v2/registration-store.ts'
+import { memoryRegistrationStore } from '../../src/v2/registration-store.ts'
 import { setupPtyPlugin } from '../../src/v2/setup.ts'
 import type { PtyExitAdmission, PtyExitInput, ToolInfoV2 } from '../../src/v2/types.ts'
 
@@ -59,6 +62,7 @@ export interface ExitFixtureOptions {
   readonly request: (request: ExitRequest) => Promise<Response>
   readonly synthetic: (input: PtyExitInput) => Promise<PtyExitAdmission>
   readonly deadlineFailure?: 'throw'
+  readonly store?: RegistrationStore
 }
 
 export interface ExitFixture {
@@ -111,6 +115,8 @@ export async function makeExitFixture(options: ExitFixtureOptions): Promise<Exit
             }
           : clock,
       report: (diagnostic) => diagnostics.push(diagnostic),
+      store: options.store ?? memoryRegistrationStore(randomUUID()),
+      private: true,
       fetch: (url, init) => {
         const request: ExitRequest = {
           method: init?.method ?? 'GET',

@@ -3,7 +3,7 @@
   "main": "dist/src/v2/index.js",
   "types": "dist/src/v2/index.d.ts",
   "module": "dist/src/v2/index.js",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "OpenCode plugin for interactive PTY management - run background processes, send input, read output with regex filtering",
   "author": "shekohex",
   "keywords": [

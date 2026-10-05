@@ -19,7 +19,12 @@ export interface ExitDiagnostic {
 }
 
 export type ExitEnrollment =
-  | { readonly status: 'registered'; readonly notificationID: string }
+  | {
+      readonly status: 'registered'
+      readonly notificationID: string
+      /** What the watch actually delivers; an existing watch keeps its own exit setting. */
+      readonly watching?: { readonly exit: boolean; readonly output: boolean }
+    }
   | { readonly status: 'unavailable'; readonly reason: 'disposed' }
 
 export type ExitProgress =
@@ -34,7 +39,7 @@ export type ExitProgress =
 
 export interface ExitJob {
   readonly registration: ExitRegistration
-  readonly notifyOnExit: boolean
+  notifyOnExit: boolean
   notifyOnOutput: boolean
   outputTail: number
   sawRunning: boolean

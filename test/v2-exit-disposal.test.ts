@@ -123,7 +123,7 @@ test('TC-11 unexpected clock failure', async () => {
     assertDiagnostic(fixture, 'worker-failed')
     expect(fixture.clock.pending()).toBe(0)
     expect(fixture.requests).toHaveLength(1)
-    expect(fixture.admissions).toHaveLength(0)
+    expect(fixture.admissions.map((input) => input.metadata.kind)).toEqual(['watch-ended'])
     fixture.clock.advance(60000)
     expect(fixture.requests).toHaveLength(1)
   } finally {

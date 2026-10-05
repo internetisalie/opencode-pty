@@ -18,8 +18,10 @@ import {
   systemExitClock,
 } from './exit-runtime.ts'
 import type { ExitSample } from './exit-state.ts'
-import { exitNotification, outputNotification } from './exit-state.ts'
+import { exitNotification, outputNotification, watchEndedNotification } from './exit-state.ts'
 import type { NativePtyClient } from './native.ts'
+import type { RegistrationStore, StoredRegistration } from './registration-store.ts'
+import { registrationKey } from './registration-store.ts'
 import type { PtyExitAdmission, PtyExitInput } from './types.ts'
 
 export interface ExitMonitorOptions {
@@ -27,6 +29,10 @@ export interface ExitMonitorOptions {
   readonly synthetic: (input: PtyExitInput) => Promise<PtyExitAdmission>
   readonly clock?: ExitClock
   readonly report?: (diagnostic: ExitDiagnostic) => void
+  /** Keeps watches across a server restart; the monitor adopts the stored ones once, when it starts. */
+  readonly store?: RegistrationStore
+  /** Drops a watch from memory once its notice is delivered; for a monitor that lives as long as the process. */
+  readonly pruneSettled?: boolean
 }
 
 export class ExitMonitor {
@@ -35,6 +41,8 @@ export class ExitMonitor {
   private readonly jobs = new Map<string, ExitJob>()
   private readonly clock: ExitClock
   private readonly report: (diagnostic: ExitDiagnostic) => void
+  private readonly saved = new Map<string, string>()
+  private storeReported = false
 
   constructor(private readonly options: ExitMonitorOptions) {
     this.clock = options.clock ?? systemExitClock
@@ -46,12 +54,24 @@ export class ExitMonitor {
     readonly sessionID: string
     readonly notifyOnExit?: boolean
     readonly notifyOnOutput?: boolean
+    /** Replaces a watch that retired, which is how pty_watch restarts one; spawn keeps retirement final. */
+    readonly restart?: boolean
   }): ExitEnrollment {
     if (!this.active) return { status: 'unavailable', reason: 'disposed' }
     const key = JSON.stringify([options.sessionID, options.ptyID])
     const existing = this.jobs.get(key)
-    if (existing)
-      return { status: 'registered', notificationID: existing.registration.notificationID }
+    if (existing && isLive(existing)) {
+      // Asking for output notices on a terminal already watched for exit adds them without a second watch.
+      if (options.notifyOnOutput === true) existing.notifyOnOutput = true
+      if (options.notifyOnExit === true) existing.notifyOnExit = true
+      this.persist()
+      return enrolled(existing)
+    }
+    if (existing && options.restart === true && existing.progress.status === 'retired') {
+      this.jobs.delete(key)
+    } else if (existing) {
+      return enrolled(existing)
+    }
     const registration = Object.freeze({
       ptyID: options.ptyID,
       sessionID: options.sessionID,
@@ -71,7 +91,52 @@ export class ExitMonitor {
     }
     this.jobs.set(key, job)
     this.schedule(job, 0)
-    return { status: 'registered', notificationID: registration.notificationID }
+    this.persist()
+    return enrolled(job)
+  }
+
+  /**
+   * Takes over the watches stored by a previous process. Called once, when the monitor starts: a terminal
+   * outlives the server that spawned it, so its watch must too.
+   */
+  adopt(): number {
+    const store = this.options.store
+    if (!this.active || !store) return 0
+    let records: StoredRegistration[]
+    try {
+      records = store.load()
+    } catch {
+      this.storeFailed()
+      return 0
+    }
+    let adopted = 0
+    for (const record of records) {
+      const key = registrationKey(record.sessionID, record.ptyID)
+      if (this.jobs.has(key)) continue
+      const job: ExitJob = {
+        registration: Object.freeze({
+          ptyID: record.ptyID,
+          sessionID: record.sessionID,
+          notificationID: record.notificationID,
+        }),
+        notifyOnExit: record.notifyOnExit,
+        notifyOnOutput: record.notifyOnOutput,
+        outputTail: record.outputTail,
+        // A stored watch was running when it was saved, so a terminal that has since left the list exited.
+        sawRunning: true,
+        progress: { status: 'observing' },
+        missingSamples: 0,
+        incompleteSamples: 0,
+        admissionAttempts: 0,
+        reported: new Set(),
+      }
+      this.jobs.set(key, job)
+      this.saved.set(key, JSON.stringify(record))
+      this.schedule(job, 0)
+      this.diagnostic(job, 'adopted')
+      adopted++
+    }
+    return adopted
   }
 
   /** Stops watching a terminal the caller removed itself, so its own removal is not reported as an exit. */
@@ -84,6 +149,7 @@ export class ExitMonitor {
     job.cancelDeadline?.()
     job.controller?.abort()
     job.progress = { status: 'retired', reason: 'unregistered', admission: 'not-attempted' }
+    this.persist()
   }
 
   dispose(): Promise<void> {
@@ -140,6 +206,7 @@ export class ExitMonitor {
 
   private reschedule(job: ExitJob): void {
     if (!this.active) return
+    this.persist()
     if (job.progress.status === 'observing') this.schedule(job, EXIT_POLL_MS)
     if (job.progress.status !== 'admitting') return
     const delay = admissionRetryDelay(job.admissionAttempts)
@@ -236,7 +303,8 @@ export class ExitMonitor {
       const acknowledgment: unknown = await this.options.synthetic(input)
       job.cancelDeadline?.()
       job.cancelDeadline = undefined
-      if (!this.active) return
+      // The watch may have been unregistered or retired while the host was answering.
+      if (!this.active || job.progress.status !== 'admitting') return
       if (
         typeof acknowledgment !== 'object' ||
         acknowledgment === null ||
@@ -323,11 +391,93 @@ export class ExitMonitor {
     job.cancelDeadline = undefined
     job.progress = { status: 'retired', reason, admission }
     this.diagnostic(job, reason, output ? 'output' : 'active')
+    this.announceEnd(job, reason)
     if (continueExit) {
       job.notifyOnOutput = false
       job.admissionAttempts = 0
       job.progress = { status: 'observing' }
       this.schedule(job, EXIT_POLL_MS)
     }
+    this.persist()
+  }
+
+  /** Best effort: the session learns its watch ended when the cause was observation, not admission. */
+  private announceEnd(job: ExitJob, reason: ExitTerminalReason): void {
+    // A retirement caused by the admission path failing cannot be announced through that path.
+    if (
+      reason !== 'observation-missing-exhausted' &&
+      reason !== 'observation-incomplete-exhausted' &&
+      reason !== 'worker-failed'
+    )
+      return
+    const input = watchEndedNotification({
+      registration: job.registration,
+      reason,
+      notificationID: `msg_pty_watch_ended_${randomUUID()}`,
+    })
+    this.options.synthetic(input).catch(() => {
+      if (this.active) this.diagnostic(job, 'watch-end-unconfirmed')
+    })
+  }
+
+  /** Writes the live watches to the store, touching it only when something changed. */
+  private persist(): void {
+    const store = this.options.store
+    if (!this.active || !store) return
+    const live = new Map<string, StoredRegistration>()
+    for (const [key, job] of this.jobs) {
+      if (this.options.pruneSettled && job.progress.status === 'admitted') {
+        this.jobs.delete(key)
+        continue
+      }
+      if (!isLive(job)) continue
+      live.set(key, {
+        ptyID: job.registration.ptyID,
+        sessionID: job.registration.sessionID,
+        notificationID: job.registration.notificationID,
+        notifyOnExit: job.notifyOnExit,
+        notifyOnOutput: job.notifyOnOutput,
+        outputTail: job.outputTail,
+      })
+    }
+    const changed = [...live].some(
+      ([key, record]) => this.saved.get(key) !== JSON.stringify(record)
+    )
+    const removals = [...this.saved.keys()].filter((key) => !live.has(key))
+    if (!changed && removals.length === 0) return
+    // Rewrite every live record, not only the changed ones, so a file another writer damaged is repaired.
+    const upserts = [...live]
+    try {
+      store.apply(
+        upserts.map(([, record]) => record),
+        removals
+      )
+    } catch {
+      this.storeFailed()
+      return
+    }
+    for (const key of removals) {
+      this.saved.delete(key)
+    }
+    for (const [key, record] of upserts) this.saved.set(key, JSON.stringify(record))
+  }
+
+  private storeFailed(): void {
+    if (this.storeReported) return
+    this.storeReported = true
+    const job = this.jobs.values().next().value
+    if (job) this.diagnostic(job, 'registration-store-failed')
+  }
+}
+
+function isLive(job: ExitJob): boolean {
+  return job.progress.status === 'observing' || job.progress.status === 'admitting'
+}
+
+function enrolled(job: ExitJob): ExitEnrollment {
+  return {
+    status: 'registered',
+    notificationID: job.registration.notificationID,
+    watching: { exit: job.notifyOnExit, output: job.notifyOnOutput },
   }
 }

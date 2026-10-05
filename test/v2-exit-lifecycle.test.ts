@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { NativePtyClient } from '../src/v2/native.ts'
+import { memoryRegistrationStore } from '../src/v2/registration-store.ts'
 import { setupPtyPlugin } from '../src/v2/setup.ts'
 import { nativeTools } from '../src/v2/tools.ts'
 import type { ToolInfoV2 } from '../src/v2/types.ts'
@@ -86,12 +87,12 @@ test('TC-13 read recovery', async () => {
 })
 
 // loom:tc LDV-182-REQ#TC-14
-test('TC-14 fresh activation loses registration', async () => {
+test('TC-14 a fresh activation without the stored registration watches nothing', async () => {
   const old = await exitFixture()
   const fresh = await exitFixture()
   try {
     const content = await spawn(old)
-    expect(content).toContain('plugin/server restart loses opt-in and uncertain retry state.')
+    expect(content).toContain('The watch is stored and re-adopted after a plugin or server restart')
     await old.cleanup()
     assertDiagnostic(old, 'disposed-registration-lost')
     fresh.clock.advance(60000)
@@ -129,7 +130,13 @@ test('setup failure disposes monitor', async () => {
           },
         },
       },
-      { clock, fetch: async () => Response.json({ data: baseInfo }), report: () => {} }
+      {
+        clock,
+        fetch: async () => Response.json({ data: baseInfo }),
+        report: () => {},
+        private: true,
+        store: memoryRegistrationStore(),
+      }
     )
   ).rejects.toBe(failure)
   expect(clock.pending()).toBe(0)
