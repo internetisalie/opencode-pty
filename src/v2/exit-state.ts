@@ -147,17 +147,18 @@ export function classifyExit(options: {
   return { status: 'exited', exitCode: target.exitCode, text: snapshot.text }
 }
 
+/** `exitCode` is undefined when the terminal left the list before its code could be read; the notice then says so. */
 export function exitNotification(options: {
   readonly registration: ExitRegistration
-  readonly exitCode: number
+  readonly exitCode: number | undefined
 }): PtyExitInput {
   const { registration, exitCode: code } = options
   const { ptyID, sessionID, notificationID } = registration
-  const result = code === 0 ? 'success' : 'error'
+  const result = code === undefined ? 'unknown' : code === 0 ? 'success' : 'error'
   return Object.freeze({
     sessionID,
     id: notificationID,
-    text: `<pty_exited>\n${JSON.stringify({ ptyID, sessionID, exitCode: code, result })}\nUse pty_read to inspect retained output.\n</pty_exited>`,
+    text: `<pty_exited>\n${JSON.stringify({ ptyID, sessionID, exitCode: code ?? null, result })}\nUse pty_read to inspect retained output.\n</pty_exited>`,
     description: 'Background PTY exited',
     metadata: Object.freeze({
       source: 'opencode-pty',
@@ -165,7 +166,7 @@ export function exitNotification(options: {
       notificationID,
       ptyID,
       sessionID,
-      exitCode: code,
+      ...(code === undefined ? {} : { exitCode: code }),
     }),
     delivery: 'steer',
     resume: true,

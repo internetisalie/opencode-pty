@@ -10,11 +10,13 @@ export type ExitTerminalReason =
   | 'admission-unconfirmed-exhausted'
   | 'invalid-admission'
   | 'worker-failed'
+  | 'unregistered'
 export type ExitDiagnosticReason =
   | ExitObservationReason
   | ExitTerminalReason
   | 'admission-unconfirmed'
   | 'admission-slow'
+  | 'exit-inferred'
   | 'admitted'
   | 'disposed-registration-lost'
   | 'disposed-admission-may-have-committed'

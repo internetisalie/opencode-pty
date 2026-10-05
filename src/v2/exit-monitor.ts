@@ -62,6 +62,7 @@ export class ExitMonitor {
       notifyOnExit: options.notifyOnExit !== false,
       notifyOnOutput: options.notifyOnOutput === true,
       outputTail: 0,
+      sawRunning: false,
       progress: { status: 'observing' },
       missingSamples: 0,
       incompleteSamples: 0,
@@ -71,6 +72,18 @@ export class ExitMonitor {
     this.jobs.set(key, job)
     this.schedule(job, 0)
     return { status: 'registered', notificationID: registration.notificationID }
+  }
+
+  /** Stops watching a terminal the caller removed itself, so its own removal is not reported as an exit. */
+  unregister(options: { readonly ptyID: string; readonly sessionID: string }): void {
+    const key = JSON.stringify([options.sessionID, options.ptyID])
+    const job = this.jobs.get(key)
+    if (!job) return
+    this.jobs.delete(key)
+    job.cancelPoll?.()
+    job.cancelDeadline?.()
+    job.controller?.abort()
+    job.progress = { status: 'retired', reason: 'unregistered', admission: 'not-attempted' }
   }
 
   dispose(): Promise<void> {
@@ -144,7 +157,7 @@ export class ExitMonitor {
     try {
       if (job.progress.status === 'observing') {
         const sample = await this.observe(job)
-        if (!this.active) return
+        if (!this.active || job.progress.status !== 'observing') return
         this.applySample(job, sample)
       }
       if (job.progress.status === 'admitting') await this.admit(job)
@@ -164,6 +177,7 @@ export class ExitMonitor {
       return
     }
     if (sample.status === 'running') {
+      job.sawRunning = true
       job.missingSamples = 0
       job.incompleteSamples = 0
       if (sample.reason) this.diagnostic(job, sample.reason, 'output')
@@ -174,7 +188,15 @@ export class ExitMonitor {
     job.incompleteSamples++
     job.missingSamples = sample.reason === 'missing-pty' ? job.missingSamples + 1 : 0
     const reason = observationRetirement(job)
-    if (reason) this.retire(job, reason, 'not-attempted')
+    if (reason === 'observation-missing-exhausted' && job.sawRunning && job.notifyOnExit) {
+      // The host removes an exited terminal from the list once a viewer is attached, so a terminal seen
+      // running and then absent has exited; its code is no longer readable.
+      this.diagnostic(job, 'exit-inferred')
+      job.progress = {
+        status: 'admitting',
+        input: exitNotification({ registration: job.registration, exitCode: undefined }),
+      }
+    } else if (reason) this.retire(job, reason, 'not-attempted')
   }
 
   private applyOutput(job: ExitJob, tail: number | undefined): void {
