@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      packages: ${{ github.event_name == 'push' && 'write' || 'none' }}
+      packages: write
     env:
       IMAGE: ghcr.io/internetisalie/opencode-pty
     steps:
