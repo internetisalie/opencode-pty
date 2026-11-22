@@ -104,7 +104,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.release.outputs.version }}"
-          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+          LAST_TAG=$(git describe --tags --abbrev=0 --exclude 'v*-internetisalie.[1-9]*' HEAD^ 2>/dev/null || true)
           if [ -n "$LAST_TAG" ]; then
             CHANGELOG=$(git log --no-merges --pretty=format:'- %s (%h)' "$LAST_TAG..HEAD")
             COMPARE_URL="https://github.com/${GITHUB_REPOSITORY}/compare/${LAST_TAG}...v${VERSION}"

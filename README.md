@@ -101,6 +101,18 @@ rm -rf ~/.cache/opencode/packages/@internetisalie/opencode-pty@0.4.1
 opencode
 ```
 
+## OCI payload release
+
+Each release is also published as a loadable payload image at `ghcr.io/internetisalie/opencode-pty:<tag>`: `server.js` (the V2 plugin bundled with Bun 1.4.3) and a `package.json` of `{"type":"module","main":"server.js"}` at the image root, linux/amd64. The image is independent of the npm package; package metadata versions are not changed to publish it.
+
+To release:
+
+1. Take the package version from `package.json` (currently `0.5.3`) as the release version `X.Y.Z`.
+2. Choose the next unused suffix `N` (a positive integer; `.0` is never used): `git ls-remote --tags origin 'v<X.Y.Z>-internetisalie.*'` and the package's GHCR version list show what is taken. The first release is `v0.5.3-internetisalie.1`.
+3. Tag the merged, CI-green commit on `main` and push the tag: `git tag v<X.Y.Z>-internetisalie.<N> <sha>` then `git push origin v<X.Y.Z>-internetisalie.<N>`.
+
+The tag must match `^v[0-9]+\.[0-9]+\.[0-9]+-internetisalie\.[1-9][0-9]*$`; the `Payload image` workflow refuses any other `v*-internetisalie.*` tag. It also refuses to re-push a release tag whose image already exists in GHCR: changed bytes need a new suffix. Only `:<tag>` is published; there are no moving or commit aliases. Pull requests build the image without pushing it.
+
 ## Tools Provided
 
 The options below describe the OpenCode V1 adapter. The V2 adapter exposes the same five tool names with the native terminal behavior described above.

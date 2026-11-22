@@ -1,0 +1,160 @@
+name: Payload image
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    tags: ["v*-internetisalie.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build-image:
+    if: github.repository == 'internetisalie/opencode-pty' && github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Prepare scratch directories
+        run: |
+          scratch="$RUNNER_TEMP/payload"
+          mkdir -p "$scratch"/{tmp,bun,context}
+          {
+            echo "TMPDIR=$scratch/tmp"
+            echo "TMP=$scratch/tmp"
+            echo "TEMP=$scratch/tmp"
+            echo "BUN_INSTALL_CACHE_DIR=$scratch/bun"
+            echo "CONTEXT=$scratch/context"
+          } >> "$GITHUB_ENV"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.3
+
+      - name: Install dependencies
+        run: bun ci
+
+      - name: Bundle the V2 plugin
+        shell: bash
+        run: |
+          umask 022
+          bun build src/v2/index.ts --target=bun --format=esm --outfile="$CONTEXT/server.js"
+          test -s "$CONTEXT/server.js"
+          printf '%s' '{"type":"module","main":"server.js"}' > "$CONTEXT/package.json"
+          chmod 0644 "$CONTEXT/server.js" "$CONTEXT/package.json"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build the payload image
+        run: |
+          docker buildx build --platform=linux/amd64 --provenance=false \
+            -f Containerfile.payload \
+            --build-arg "SOURCE=https://github.com/${GITHUB_REPOSITORY}" \
+            --build-arg "REVISION=${GITHUB_SHA}" \
+            --build-arg "VERSION=sha-${GITHUB_SHA:0:12}" \
+            --build-arg "TITLE=opencode-pty" \
+            --output "type=oci,dest=$RUNNER_TEMP/payload.oci.tar" \
+            "$CONTEXT"
+
+  publish-image:
+    if: github.repository == 'internetisalie/opencode-pty' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: payload-image-${{ github.repository }}
+      cancel-in-progress: false
+    env:
+      IMAGE: ghcr.io/internetisalie/opencode-pty
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Refuse a tag outside the release grammar
+        shell: bash
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-internetisalie\.[1-9][0-9]*$ ]]; then
+            echo "::error::$GITHUB_REF_NAME is not a release tag (vX.Y.Z-internetisalie.N, N >= 1)"
+            exit 1
+          fi
+
+      - name: Prepare scratch directories
+        run: |
+          scratch="$RUNNER_TEMP/payload"
+          mkdir -p "$scratch"/{tmp,bun,context}
+          {
+            echo "TMPDIR=$scratch/tmp"
+            echo "TMP=$scratch/tmp"
+            echo "TEMP=$scratch/tmp"
+            echo "BUN_INSTALL_CACHE_DIR=$scratch/bun"
+            echo "CONTEXT=$scratch/context"
+          } >> "$GITHUB_ENV"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.3
+
+      - name: Install dependencies
+        run: bun ci
+
+      - name: Bundle the V2 plugin
+        shell: bash
+        run: |
+          umask 022
+          bun build src/v2/index.ts --target=bun --format=esm --outfile="$CONTEXT/server.js"
+          test -s "$CONTEXT/server.js"
+          printf '%s' '{"type":"module","main":"server.js"}' > "$CONTEXT/package.json"
+          chmod 0644 "$CONTEXT/server.js" "$CONTEXT/package.json"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Refuse a re-push of a release tag
+        shell: bash
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-internetisalie\.[1-9][0-9]*$ ]]; then
+            echo "$GITHUB_REF_NAME is not a release tag; nothing to check"
+            exit 0
+          fi
+          image="ghcr.io/internetisalie/opencode-pty:$GITHUB_REF_NAME"
+          set +e
+          err=$(docker buildx imagetools inspect "$image" 2>&1 >/dev/null)
+          status=$?
+          set -e
+          if [[ $status -eq 0 ]]; then
+            echo "::error::$image is already published; publish a new release version"
+            exit 1
+          fi
+          not_found='^ERROR: [^[:space:]]+: not found$'
+          if [[ "$err" =~ $not_found ]]; then
+            echo "$image is not published; continuing"
+            exit 0
+          fi
+          echo "$err" >&2
+          exit 1
+
+      - name: Publish the payload image
+        run: |
+          docker buildx build --platform=linux/amd64 --provenance=false \
+            -f Containerfile.payload \
+            --build-arg "SOURCE=https://github.com/${GITHUB_REPOSITORY}" \
+            --build-arg "REVISION=${GITHUB_SHA}" \
+            --build-arg "VERSION=${GITHUB_REF_NAME#v}" \
+            --build-arg "TITLE=opencode-pty" \
+            --push -t "$IMAGE:$GITHUB_REF_NAME" \
+            "$CONTEXT"
